@@ -84,9 +84,21 @@ class ContactsModule : TransferModule {
         return counts.maxByOrNull { it.value }?.key
     }
 
+    private fun rawContactCount(context: Context): Int = runCatching {
+        context.contentResolver.query(
+            ContactsContract.RawContacts.CONTENT_URI,
+            arrayOf(ContactsContract.RawContacts._ID),
+            null,
+            null,
+            null,
+        )?.use { it.count } ?: 0
+    }.getOrDefault(0)
+
     override suspend fun importRecords(context: Context, jsonArray: String) {
         val records = Json.decodeFromString<List<ContactRecord>>(jsonArray)
+        if (records.isEmpty()) return
         val account = preferredAccount(context)
+        val before = rawContactCount(context)
         // Batches are capped well under the ~500-operation binder transaction limit.
         records.chunked(80).forEach { chunk ->
             val ops = ArrayList<ContentProviderOperation>()
@@ -137,6 +149,14 @@ class ContactsModule : TransferModule {
                 }
             }
             context.contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
+        }
+
+        // applyBatch can report success while the provider quietly drops rows
+        // (a rejected account, a read-only provider). Without this check the UI
+        // would show a green tick for contacts that never actually landed.
+        val created = rawContactCount(context) - before
+        if (created <= 0) {
+            error("Провайдер контактов не принял ни одной записи (аккаунт: ${account?.first ?: "локальный"})")
         }
     }
 }

@@ -45,6 +45,8 @@ sealed interface ProtocolMessage {
         val nearbyPayloadId: Long? = null,
         val groupKey: String? = null,
         val isFinalPart: Boolean = true,
+        /** Set when this file is a record set too large for an inline Records message. */
+        val recordCount: Int? = null,
     ) : ProtocolMessage
 
     @Serializable

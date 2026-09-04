@@ -20,16 +20,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.androidtransfer.app.R
 import dev.androidtransfer.app.core.transfer.CategoryStatus
 import dev.androidtransfer.app.core.transfer.TransferState
+import dev.androidtransfer.app.modules.apps.ApkInstaller
 import dev.androidtransfer.app.modules.apps.ReceivedAppsHolder
 import dev.androidtransfer.app.ui.viewmodel.TransferViewModel
 
 @Composable
 fun SummaryScreen(viewModel: TransferViewModel, onOpenApps: () -> Unit, onFinish: () -> Unit) {
+    val context = LocalContext.current
     val apps by ReceivedAppsHolder.apps.collectAsState()
     val state by viewModel.transferState.collectAsState()
     val categories = (state as? TransferState.Completed)?.categories.orEmpty()
@@ -76,8 +79,31 @@ fun SummaryScreen(viewModel: TransferViewModel, onOpenApps: () -> Unit, onFinish
                 }
             }
 
+            val installStats by ApkInstaller.stats.collectAsState()
+            if (installStats.anythingHappened) {
+                Text(
+                    "Приложения: установлено ${installStats.installed}" +
+                        (if (installStats.waiting > 0) ", ожидают подтверждения ${installStats.waiting}" else "") +
+                        (if (installStats.failed > 0) ", не удалось ${installStats.failed}" else ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+                installStats.lastError?.let {
+                    Text("Причина: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                if (installStats.failed > 0) {
+                    Button(onClick = { ApkInstaller.retryFailed(context) }, modifier = Modifier.padding(top = 8.dp)) {
+                        Text("Повторить установку")
+                    }
+                }
+            }
+
             if (apps.isNotEmpty()) {
-                Text("Получен список из ${apps.size} приложений для установки.", modifier = Modifier.padding(top = 16.dp))
+                Text(
+                    "Список приложений отправителя: ${apps.size}. Открой его, если что-то не установилось — оттуда можно поставить из Play Store.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
                 Button(onClick = onOpenApps, modifier = Modifier.padding(top = 8.dp)) {
                     Text("Открыть список приложений")
                 }

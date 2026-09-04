@@ -172,6 +172,25 @@ class TransferManager(
     private suspend fun handleFile(header: ProtocolMessage.FileHeader, file: java.io.File) {
         categoryStatus[header.category] = CategoryStatus.RUNNING
         emitRunning()
+
+        // A record set too big for an inline message arrives as a file; unwrap
+        // it here so modules still only ever see importRecords.
+        if (header.groupKey == CategorySink.RECORDS_GROUP_KEY) {
+            val outcome = runCatching {
+                val json = file.readText(Charsets.UTF_8)
+                modules[header.category]?.importRecords(context, json)
+            }
+            outcome
+                .onSuccess { categoryDetail[header.category] = "${header.recordCount ?: 0} шт." }
+                .onFailure { e ->
+                    categoryStatus[header.category] = CategoryStatus.FAILED
+                    categoryDetail[header.category] = e.message ?: e.javaClass.simpleName
+                }
+            file.delete()
+            emitRunning()
+            return
+        }
+
         val result = runCatching { modules[header.category]?.importFile(context, header, file) }
         result.onFailure { e ->
             categoryStatus[header.category] = CategoryStatus.FAILED

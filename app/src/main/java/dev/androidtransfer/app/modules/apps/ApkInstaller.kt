@@ -11,6 +11,16 @@ import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.util.ArrayDeque
 
+/** What actually happened to the transferred APKs, so the UI never has to say "nothing happened" without a reason. */
+data class InstallStats(
+    val waiting: Int = 0,
+    val installed: Int = 0,
+    val failed: Int = 0,
+    val lastError: String? = null,
+) {
+    val anythingHappened: Boolean get() = waiting > 0 || installed > 0 || failed > 0
+}
+
 /**
  * Installs apps from their own APK bytes (base + split APKs) via
  * PackageInstaller — the non-root, non-Play-Store install path every
@@ -19,21 +29,22 @@ import java.util.ArrayDeque
  * being a privileged system installer or holding root, and this app is
  * neither, on purpose.
  *
- * Installs are queued and committed strictly one at a time. Committing
- * every finished APK immediately would stack dozens of system install
- * dialogs on top of each other, and most of them would simply be lost.
+ * Sessions are committed strictly one at a time — committing every finished
+ * APK immediately stacks dozens of system dialogs on top of each other and
+ * most are simply lost. Failed installs keep their APKs so [retryFailed] can
+ * offer them again.
  */
 object ApkInstaller {
 
     private data class PendingInstall(val packageName: String, val parts: List<File>)
 
     private val queue = ArrayDeque<PendingInstall>()
+    private val inFlight = mutableMapOf<Int, PendingInstall>()
+    private val failedInstalls = mutableListOf<PendingInstall>()
     private var installing = false
 
-    private val _remaining = MutableStateFlow(0)
-
-    /** How many transferred apps are still waiting for their install confirmation. */
-    val remaining: StateFlow<Int> = _remaining
+    private val _stats = MutableStateFlow(InstallStats())
+    val stats: StateFlow<InstallStats> = _stats
 
     fun isInstalled(context: Context, packageName: String): Boolean =
         runCatching { context.packageManager.getPackageInfo(packageName, 0) }.isSuccess
@@ -41,30 +52,58 @@ object ApkInstaller {
     @Synchronized
     fun enqueue(context: Context, packageName: String, apkParts: List<File>) {
         queue.addLast(PendingInstall(packageName, apkParts))
-        _remaining.value = queue.size + if (installing) 1 else 0
+        publishStats()
+        pump(context.applicationContext)
+    }
+
+    @Synchronized
+    fun retryFailed(context: Context) {
+        queue.addAll(failedInstalls)
+        failedInstalls.clear()
+        _stats.value = _stats.value.copy(failed = 0, lastError = null)
+        publishStats()
         pump(context.applicationContext)
     }
 
     /** Called by [ApkInstallReceiver] once a session reaches a final state. */
     @Synchronized
-    fun onSessionFinished(context: Context) {
+    fun onSessionFinished(context: Context, sessionId: Int, success: Boolean, message: String?) {
+        val finished = inFlight.remove(sessionId)
+        if (success) {
+            finished?.parts?.forEach { runCatching { it.delete() } }
+            _stats.value = _stats.value.copy(installed = _stats.value.installed + 1)
+        } else if (finished != null) {
+            // Keep the APKs around so the user can retry without re-transferring.
+            failedInstalls.add(finished)
+            _stats.value = _stats.value.copy(
+                failed = _stats.value.failed + 1,
+                lastError = message?.takeIf { it.isNotBlank() } ?: "установка отклонена",
+            )
+        }
         installing = false
+        publishStats()
         pump(context.applicationContext)
+    }
+
+    private fun publishStats() {
+        _stats.value = _stats.value.copy(waiting = queue.size + inFlight.size)
     }
 
     private fun pump(context: Context) {
         if (installing) return
-        val next = queue.pollFirst()
-        _remaining.value = queue.size + if (next != null) 1 else 0
-        if (next == null) return
+        val next = queue.pollFirst() ?: run { publishStats(); return }
         installing = true
-        val started = runCatching { commit(context, next) }.isSuccess
-        if (!started) {
-            // Nothing will report back for a session that never opened, so keep the queue moving.
-            next.parts.forEach { runCatching { it.delete() } }
-            installing = false
-            pump(context)
-        }
+        runCatching { commit(context, next) }
+            .onFailure { e ->
+                failedInstalls.add(next)
+                _stats.value = _stats.value.copy(
+                    failed = _stats.value.failed + 1,
+                    lastError = e.message ?: e.javaClass.simpleName,
+                )
+                installing = false
+                pump(context)
+            }
+        publishStats()
     }
 
     private fun commit(context: Context, install: PendingInstall) {
@@ -73,6 +112,7 @@ object ApkInstaller {
         runCatching { params.setAppPackageName(install.packageName) }
 
         val sessionId = installer.createSession(params)
+        inFlight[sessionId] = install
         val session = installer.openSession(sessionId)
         try {
             for ((index, apk) in install.parts.withIndex()) {
@@ -91,7 +131,6 @@ object ApkInstaller {
             session.commit(pendingIntent.intentSender)
         } finally {
             session.close()
-            install.parts.forEach { runCatching { it.delete() } }
         }
     }
 }
@@ -99,28 +138,37 @@ object ApkInstaller {
 /**
  * PackageInstaller delivers each session's outcome here. A pending-user-action
  * result carries the system's own install confirmation screen as an Intent we
- * just forward; any final result (success, failure, the user backing out)
- * releases the queue so the next app can be offered. Failures are expected and
- * harmless — e.g. a signature mismatch against an app already installed — and
- * simply leave that one app for the Play Store fallback list.
+ * just forward; every final result releases the queue so the next app can be
+ * offered, and carries the system's own message when something went wrong.
  */
 class ApkInstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirmIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT)
-                }
-                confirmIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val launched = confirmIntent?.let { runCatching { context.startActivity(it) }.isSuccess } ?: false
-                // If the dialog could not be shown, this session is never coming
-                // back with a result — don't let it wedge the queue.
-                if (!launched) ApkInstaller.onSessionFinished(context)
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+        val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            val confirmIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_INTENT)
             }
-            else -> ApkInstaller.onSessionFinished(context)
+            confirmIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val launched = confirmIntent?.let { runCatching { context.startActivity(it) }.isSuccess } ?: false
+            // A dialog that never opened is never coming back with a result —
+            // don't let it wedge the queue, and say why.
+            if (!launched) {
+                ApkInstaller.onSessionFinished(context, sessionId, success = false, message = "не удалось показать диалог установки")
+            }
+            return
         }
+
+        ApkInstaller.onSessionFinished(
+            context,
+            sessionId,
+            success = status == PackageInstaller.STATUS_SUCCESS,
+            message = message,
+        )
     }
 }

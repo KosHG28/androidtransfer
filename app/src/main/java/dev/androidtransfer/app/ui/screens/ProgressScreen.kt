@@ -67,13 +67,20 @@ fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Идёт перенос…", style = MaterialTheme.typography.headlineSmall)
 
-            val pendingInstalls by ApkInstaller.remaining.collectAsState()
-            if (pendingInstalls > 0) {
+            val installStats by ApkInstaller.stats.collectAsState()
+            if (installStats.anythingHappened) {
                 Text(
-                    "Приложений в очереди на установку: $pendingInstalls — подтверждайте установку по очереди",
+                    buildString {
+                        if (installStats.waiting > 0) append("Ожидают подтверждения: ${installStats.waiting}. ")
+                        if (installStats.installed > 0) append("Установлено: ${installStats.installed}. ")
+                        if (installStats.failed > 0) append("Не удалось: ${installStats.failed}.")
+                    }.trim(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
+                installStats.lastError?.let {
+                    Text("Причина: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
             }
 
             when (val s = state) {

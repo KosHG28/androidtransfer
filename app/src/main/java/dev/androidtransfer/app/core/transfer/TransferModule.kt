@@ -44,8 +44,39 @@ interface TransferModule {
 }
 
 class CategorySink(private val category: TransferCategory, private val transport: dev.androidtransfer.app.core.transport.P2pTransport) : TransferSink {
+
+    companion object {
+        /**
+         * Nearby Connections caps a BYTES payload at 32 KB, and anything over
+         * that is simply rejected — which is why a real contact list (hundreds
+         * of entries, easily hundreds of KB) never arrived while the much
+         * smaller app list did. Record sets past this threshold travel as a
+         * file payload instead, which is streamed and has no such limit.
+         */
+        const val INLINE_RECORDS_LIMIT_BYTES = 24 * 1024
+
+        /** Marks a file payload that is really a record set, not user content. */
+        const val RECORDS_GROUP_KEY = "__records__"
+        const val RECORDS_MIME_TYPE = "application/json"
+    }
+
     override suspend fun sendRecords(jsonArray: String, count: Int) {
-        transport.sendMessage(ProtocolMessage.Records(category, jsonArray, count))
+        val bytes = jsonArray.toByteArray(Charsets.UTF_8)
+        if (bytes.size <= INLINE_RECORDS_LIMIT_BYTES) {
+            transport.sendMessage(ProtocolMessage.Records(category, jsonArray, count))
+            return
+        }
+        val header = ProtocolMessage.FileHeader(
+            itemId = UUID.randomUUID().toString(),
+            category = category,
+            displayName = "records.json",
+            sizeBytes = bytes.size.toLong(),
+            mimeType = RECORDS_MIME_TYPE,
+            groupKey = RECORDS_GROUP_KEY,
+            isFinalPart = true,
+            recordCount = count,
+        )
+        transport.sendFile(header) { bytes.inputStream() }
     }
 
     override suspend fun sendFile(
