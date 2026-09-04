@@ -59,17 +59,45 @@ class ContactsModule : TransferModule {
         sink.sendRecords(json, records.size)
     }
 
+    /**
+     * Contacts written with no account are "local" contacts, which several OEM
+     * contact apps (MIUI in particular) hide by default — they import fine and
+     * then appear nowhere, which looks exactly like a failed transfer. Reusing
+     * whichever account already holds the most contacts on this phone puts them
+     * where the user will actually see them.
+     */
+    private fun preferredAccount(context: Context): Pair<String, String>? {
+        val counts = mutableMapOf<Pair<String, String>, Int>()
+        val projection = arrayOf(ContactsContract.RawContacts.ACCOUNT_TYPE, ContactsContract.RawContacts.ACCOUNT_NAME)
+        runCatching {
+            context.contentResolver.query(ContactsContract.RawContacts.CONTENT_URI, projection, null, null, null)?.use { cursor ->
+                val typeIdx = cursor.getColumnIndexOrThrow(ContactsContract.RawContacts.ACCOUNT_TYPE)
+                val nameIdx = cursor.getColumnIndexOrThrow(ContactsContract.RawContacts.ACCOUNT_NAME)
+                while (cursor.moveToNext()) {
+                    val type = cursor.getString(typeIdx) ?: continue
+                    val name = cursor.getString(nameIdx) ?: continue
+                    val key = type to name
+                    counts[key] = (counts[key] ?: 0) + 1
+                }
+            }
+        }
+        return counts.maxByOrNull { it.value }?.key
+    }
+
     override suspend fun importRecords(context: Context, jsonArray: String) {
         val records = Json.decodeFromString<List<ContactRecord>>(jsonArray)
+        val account = preferredAccount(context)
         // Batches are capped well under the ~500-operation binder transaction limit.
         records.chunked(80).forEach { chunk ->
             val ops = ArrayList<ContentProviderOperation>()
             for (record in chunk) {
                 val rawContactIndex = ops.size
-                // Omitting ACCOUNT_TYPE/ACCOUNT_NAME (rather than passing null through
-                // ContentProviderOperation.Builder.withValue, which is unreliable) leaves
-                // the row NULL, which is what makes it a local, account-less contact.
-                ops.add(ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI).build())
+                val rawContact = ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                if (account != null) {
+                    rawContact.withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, account.first)
+                    rawContact.withValue(ContactsContract.RawContacts.ACCOUNT_NAME, account.second)
+                }
+                ops.add(rawContact.build())
                 if (!record.displayName.isNullOrBlank()) {
                     ops.add(
                         ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)

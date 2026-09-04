@@ -51,6 +51,22 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
     var customFolderTreeUri by mutableStateOf<Uri?>(null)
     var whatsappTreeUri by mutableStateOf<Uri?>(null)
 
+    /** Which apps' APKs to send. Empty until the picker has been opened at least once. */
+    val selectedAppPackages: SnapshotStateList<String> = mutableStateListOf()
+    var appSelectionInitialized by mutableStateOf(false)
+        private set
+
+    fun initAppSelection(packages: List<String>) {
+        selectedAppPackages.clear()
+        selectedAppPackages.addAll(packages)
+        appSelectionInitialized = true
+    }
+
+    fun toggleApp(packageName: String, enabled: Boolean) {
+        if (enabled && packageName !in selectedAppPackages) selectedAppPackages.add(packageName)
+        if (!enabled) selectedAppPackages.remove(packageName)
+    }
+
     var nearbyTransport: NearbyTransport? = null
     var usbTransport: UsbTetherTransport? = null
     private var transferManager: TransferManager? = null
@@ -69,7 +85,9 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
         TransferCategory.CALENDAR to CalendarModule(),
         TransferCategory.MEDIA to MediaModule(),
         TransferCategory.FILES to FilesModule(filesTreeUri),
-        TransferCategory.INSTALLED_APPS to AppsModule(),
+        TransferCategory.INSTALLED_APPS to AppsModule(
+            selectedPackages = if (appSelectionInitialized) selectedAppPackages.toSet() else null,
+        ),
         TransferCategory.WHATSAPP_MEDIA to WhatsAppModule(whatsappTreeUri),
         TransferCategory.CUSTOM_FOLDER to CustomFolderModule(customFolderTreeUri),
         TransferCategory.WALLPAPER to WallpaperModule(),
@@ -89,7 +107,28 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun beginSending(deviceName: String) {
-        transferManager?.startSending(UUID.randomUUID().toString(), selectedCategories.toList(), deviceName)
+        transferManager?.startSending(UUID.randomUUID().toString(), orderedSelection(), deviceName)
+    }
+
+    /**
+     * Small, quick categories go first and the app APKs — potentially several
+     * gigabytes — go last. Otherwise a long-running app transfer starves
+     * everything queued behind it, which is how wallpaper ended up never
+     * running at all.
+     */
+    private fun orderedSelection(): List<TransferCategory> {
+        val order = listOf(
+            TransferCategory.CONTACTS,
+            TransferCategory.CALL_LOG,
+            TransferCategory.CALENDAR,
+            TransferCategory.WALLPAPER,
+            TransferCategory.MEDIA,
+            TransferCategory.FILES,
+            TransferCategory.WHATSAPP_MEDIA,
+            TransferCategory.CUSTOM_FOLDER,
+            TransferCategory.INSTALLED_APPS,
+        )
+        return order.filter { it in selectedCategories }
     }
 
     override fun onCleared() {

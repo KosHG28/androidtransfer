@@ -2,8 +2,6 @@ package dev.androidtransfer.app.modules.apps
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
 import android.net.Uri
 import dev.androidtransfer.app.core.transfer.ProtocolMessage
 import dev.androidtransfer.app.core.transfer.TransferCategory
@@ -55,40 +53,41 @@ object ReceivedAppsHolder {
         }
 }
 
-class AppsModule : TransferModule {
+/**
+ * @param selectedPackages which apps to send APKs for; null means "everything".
+ * Sending every installed APK can easily run to several gigabytes, which is why
+ * the sender gets to pick — an app category that never finishes also starves
+ * every category queued behind it.
+ */
+class AppsModule(private val selectedPackages: Set<String>? = null) : TransferModule {
     override val category = TransferCategory.INSTALLED_APPS
 
     private val pendingApkParts = mutableMapOf<String, MutableList<File>>()
 
     override suspend fun export(context: Context, sink: TransferSink) {
-        val pm = context.packageManager
-        @Suppress("DEPRECATION")
-        val infos = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 && it.packageName != context.packageName }
+        val all = InstalledApps.list(context)
+        val chosen = all.filter { selectedPackages == null || it.packageName in selectedPackages }
 
-        val apps = infos.map { AppRecord(it.packageName, pm.getApplicationLabel(it).toString()) }.sortedBy { it.label.lowercase() }
-        sink.sendRecords(Json.encodeToString(apps), apps.size)
+        // The list always goes over, so the receiver can fall back to the Play
+        // Store for anything whose APK couldn't be read off this device.
+        val records = chosen.map { AppRecord(it.packageName, it.label) }
+        sink.sendRecords(Json.encodeToString(records), records.size)
 
-        for (info in infos) {
-            // One unreadable APK (OEM restriction, DRM-protected app, etc.) must not abort the rest of the list.
-            runCatching { sendApkFiles(sink, info) }
+        for (app in chosen) {
+            // One unreadable APK (OEM restriction, DRM-protected app, ...) must not abort the rest.
+            runCatching { sendApkFiles(sink, app) }
         }
     }
 
-    private suspend fun sendApkFiles(sink: TransferSink, info: ApplicationInfo) {
-        val apkPaths = buildList {
-            add(info.sourceDir)
-            info.splitSourceDirs?.let { addAll(it) }
-        }
-        val files = apkPaths.map { File(it) }.filter { it.canRead() }
-        if (files.isEmpty()) return
-        files.forEachIndexed { index, apk ->
+    private suspend fun sendApkFiles(sink: TransferSink, app: InstalledApp) {
+        if (!app.isTransferable) return
+        app.apkFiles.forEachIndexed { index, apk ->
             sink.sendFile(
                 displayName = apk.name,
                 sizeBytes = apk.length(),
                 mimeType = "application/vnd.android.package-archive",
-                groupKey = info.packageName,
-                isFinalPart = index == files.lastIndex,
+                groupKey = app.packageName,
+                isFinalPart = index == app.apkFiles.lastIndex,
                 open = { apk.inputStream() },
             )
         }

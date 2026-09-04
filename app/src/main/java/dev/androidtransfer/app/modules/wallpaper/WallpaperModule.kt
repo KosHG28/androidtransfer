@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import dev.androidtransfer.app.core.transfer.ProtocolMessage
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.core.transfer.TransferModule
@@ -26,10 +27,19 @@ class WallpaperModule : TransferModule {
     override val category = TransferCategory.WALLPAPER
 
     override suspend fun export(context: Context, sink: TransferSink) {
+        // Failing loudly matters here: silently exporting nothing is
+        // indistinguishable from a broken transfer, and the usual cause is an
+        // OS restriction the user can't do anything about but should be told.
         val bitmap = runCatching {
-            val drawable = WallpaperManager.getInstance(context).drawable ?: return
+            val drawable = WallpaperManager.getInstance(context).drawable
+                ?: error("Система не отдала текущие обои")
             drawableToBitmap(drawable)
-        }.getOrNull() ?: return
+        }.getOrElse { cause ->
+            if (cause is SecurityException || Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                error("Android 13+ разрешает читать обои только лаунчеру — перенести их нельзя без root")
+            }
+            error(cause.message ?: "Не удалось прочитать обои")
+        }
 
         val staged = File(context.cacheDir, "wallpaper_export.png")
         staged.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }

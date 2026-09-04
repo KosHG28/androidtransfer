@@ -12,7 +12,8 @@ import kotlinx.coroutines.launch
 
 enum class CategoryStatus { PENDING, RUNNING, DONE, FAILED }
 
-data class CategoryProgress(val category: TransferCategory, val status: CategoryStatus)
+/** [detail] carries what actually happened: a count on success, or the failure reason — a bare red icon tells the user nothing. */
+data class CategoryProgress(val category: TransferCategory, val status: CategoryStatus, val detail: String? = null)
 
 sealed interface TransferState {
     data object Idle : TransferState
@@ -53,6 +54,7 @@ class TransferManager(
 
     private val categoryOrder = mutableListOf<TransferCategory>()
     private val categoryStatus = mutableMapOf<TransferCategory, CategoryStatus>()
+    private val categoryDetail = mutableMapOf<TransferCategory, String>()
     private var peerName: String? = null
 
     // Cumulative-bytes + smoothed-speed tracking across the whole session, not just the current file.
@@ -86,7 +88,11 @@ class TransferManager(
                     categoryStatus[category] = CategoryStatus.RUNNING
                     emitRunning()
                     val result = runCatching { module.export(context, CategorySink(category, transport)) }
-                    result.onFailure { e -> transport.sendMessage(ProtocolMessage.Error(category, e.message ?: "export failed")) }
+                    result.onFailure { e ->
+                        val reason = e.message ?: e.javaClass.simpleName
+                        categoryDetail[category] = reason
+                        transport.sendMessage(ProtocolMessage.Error(category, reason))
+                    }
                     categoryStatus[category] = if (result.isSuccess) CategoryStatus.DONE else CategoryStatus.FAILED
                     emitRunning()
                     transport.sendMessage(ProtocolMessage.CategoryDone(category, itemsSent = 0))
@@ -137,7 +143,12 @@ class TransferManager(
                 categoryStatus[message.category] = CategoryStatus.RUNNING
                 emitRunning()
                 val result = runCatching { modules[message.category]?.importRecords(context, message.jsonArray) }
-                if (result.isFailure) categoryStatus[message.category] = CategoryStatus.FAILED
+                result
+                    .onSuccess { categoryDetail[message.category] = "${message.count} шт." }
+                    .onFailure { e ->
+                        categoryStatus[message.category] = CategoryStatus.FAILED
+                        categoryDetail[message.category] = e.message ?: e.javaClass.simpleName
+                    }
                 emitRunning()
             }
             is ProtocolMessage.CategoryDone -> {
@@ -148,7 +159,10 @@ class TransferManager(
             }
             is ProtocolMessage.TransferDone -> _state.value = TransferState.Completed(snapshotCategories())
             is ProtocolMessage.Error -> {
-                message.category?.let { categoryStatus[it] = CategoryStatus.FAILED }
+                message.category?.let {
+                    categoryStatus[it] = CategoryStatus.FAILED
+                    categoryDetail[it] = message.message
+                }
                 emitRunning()
             }
             else -> Unit
@@ -159,7 +173,10 @@ class TransferManager(
         categoryStatus[header.category] = CategoryStatus.RUNNING
         emitRunning()
         val result = runCatching { modules[header.category]?.importFile(context, header, file) }
-        if (result.isFailure) categoryStatus[header.category] = CategoryStatus.FAILED
+        result.onFailure { e ->
+            categoryStatus[header.category] = CategoryStatus.FAILED
+            categoryDetail[header.category] = e.message ?: e.javaClass.simpleName
+        }
         file.delete()
         emitRunning()
     }
@@ -188,7 +205,7 @@ class TransferManager(
     }
 
     private fun snapshotCategories(): List<CategoryProgress> =
-        categoryOrder.map { CategoryProgress(it, categoryStatus[it] ?: CategoryStatus.PENDING) }
+        categoryOrder.map { CategoryProgress(it, categoryStatus[it] ?: CategoryStatus.PENDING, categoryDetail[it]) }
 
     /** Late progress ticks must not drag a finished transfer back to "running". */
     private fun emitRunningUnlessFinished() {

@@ -47,19 +47,29 @@ fun SummaryScreen(viewModel: TransferViewModel, onOpenApps: () -> Unit, onFinish
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
                     for (progress in categories) {
                         val info = categoryUiInfo(progress.category)
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(info.icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text(stringResource(info.labelRes), modifier = Modifier.padding(start = 8.dp))
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(info.icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text(stringResource(info.labelRes), modifier = Modifier.padding(start = 8.dp))
+                                }
+                                if (progress.status == CategoryStatus.FAILED) {
+                                    Icon(Icons.Filled.Error, contentDescription = "Не удалось", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                } else {
+                                    Icon(Icons.Filled.CheckCircle, contentDescription = "Готово", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                }
                             }
-                            if (progress.status == CategoryStatus.FAILED) {
-                                Icon(Icons.Filled.Error, contentDescription = "Не удалось", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                            } else {
-                                Icon(Icons.Filled.CheckCircle, contentDescription = "Готово", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            progress.detail?.let { detail ->
+                                Text(
+                                    detail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (progress.status == CategoryStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.padding(start = 26.dp),
+                                )
                             }
                         }
                     }

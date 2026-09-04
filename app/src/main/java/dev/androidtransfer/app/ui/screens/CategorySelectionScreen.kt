@@ -54,7 +54,7 @@ private val groups: List<Pair<String, List<TransferCategory>>> = listOf(
 )
 
 @Composable
-fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit) {
+fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, onPickApps: () -> Unit) {
     val context = LocalContext.current
 
     var denied by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -156,6 +156,17 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit) {
                                 modifier = Modifier.padding(start = 48.dp),
                             ) {
                                 Text(if (viewModel.whatsappTreeUri != null) "Папка выбрана" else "Выбрать папку Android/media/com.whatsapp/WhatsApp")
+                            }
+                        }
+                        TransferCategory.INSTALLED_APPS -> if (checked) {
+                            OutlinedButton(onClick = onPickApps, modifier = Modifier.padding(start = 48.dp)) {
+                                Text(
+                                    if (viewModel.appSelectionInitialized) {
+                                        "Выбрано приложений: ${viewModel.selectedAppPackages.size}"
+                                    } else {
+                                        "Выбрать приложения (по умолчанию все)"
+                                    },
+                                )
                             }
                         }
                         else -> Unit

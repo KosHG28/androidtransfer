@@ -134,24 +134,34 @@ private fun RunningContent(state: TransferState.Running) {
 @Composable
 private fun CategoryRow(progress: CategoryProgress) {
     val info = categoryUiInfo(progress.category)
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(info.icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(
-                stringResource(info.labelRes),
-                modifier = Modifier.padding(start = 12.dp),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Icon(info.icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text(
+                    stringResource(info.labelRes),
+                    modifier = Modifier.padding(start = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            when (progress.status) {
+                CategoryStatus.PENDING -> Icon(Icons.Filled.RadioButtonUnchecked, contentDescription = "Ожидает", tint = MaterialTheme.colorScheme.outline)
+                CategoryStatus.RUNNING -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                CategoryStatus.DONE -> Icon(Icons.Filled.CheckCircle, contentDescription = "Готово", tint = MaterialTheme.colorScheme.primary)
+                CategoryStatus.FAILED -> Icon(Icons.Filled.Error, contentDescription = "Ошибка", tint = MaterialTheme.colorScheme.error)
+            }
         }
-        when (progress.status) {
-            CategoryStatus.PENDING -> Icon(Icons.Filled.RadioButtonUnchecked, contentDescription = "Ожидает", tint = MaterialTheme.colorScheme.outline)
-            CategoryStatus.RUNNING -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            CategoryStatus.DONE -> Icon(Icons.Filled.CheckCircle, contentDescription = "Готово", tint = MaterialTheme.colorScheme.primary)
-            CategoryStatus.FAILED -> Icon(Icons.Filled.Error, contentDescription = "Ошибка", tint = MaterialTheme.colorScheme.error)
+        progress.detail?.let { detail ->
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (progress.status == CategoryStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(start = 32.dp),
+            )
         }
     }
 }

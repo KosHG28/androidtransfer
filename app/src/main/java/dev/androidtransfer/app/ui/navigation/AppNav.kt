@@ -6,6 +6,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import dev.androidtransfer.app.ui.screens.AppPickerScreen
 import dev.androidtransfer.app.ui.screens.AppsListScreen
 import dev.androidtransfer.app.ui.screens.CategorySelectionScreen
 import dev.androidtransfer.app.ui.screens.HomeScreen
@@ -24,6 +25,7 @@ private object Routes {
     const val WIFI = "wifi"
     const val USB = "usb"
     const val CATEGORIES = "categories"
+    const val APP_PICKER = "app_picker"
     const val PROGRESS = "progress"
     const val APPS = "apps"
     const val SUMMARY = "summary"
@@ -54,7 +56,14 @@ fun AppNav() {
             UsbScreen(viewModel, onConnected = { navController.navigate(nextAfterConnect(viewModel)) })
         }
         composable(Routes.CATEGORIES) {
-            CategorySelectionScreen(viewModel, onStart = { navController.navigate(Routes.PROGRESS) })
+            CategorySelectionScreen(
+                viewModel,
+                onStart = { navController.navigate(Routes.PROGRESS) },
+                onPickApps = { navController.navigate(Routes.APP_PICKER) },
+            )
+        }
+        composable(Routes.APP_PICKER) {
+            AppPickerScreen(viewModel, onDone = { navController.popBackStack() })
         }
         composable(Routes.PROGRESS) {
             ProgressScreen(viewModel, onDone = { navController.navigate(Routes.SUMMARY) })
