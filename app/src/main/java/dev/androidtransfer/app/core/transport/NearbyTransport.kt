@@ -145,22 +145,36 @@ class NearbyTransport(
         }
     }
 
+    /**
+     * Every Nearby call below returns a Task whose failure we used to
+     * silently drop — a missing permission or Play Services error meant
+     * the UI just sat on "waiting" forever with zero indication anything
+     * was wrong. Route every failure through [_events] instead.
+     */
+    private fun emitFailure(context: String, exception: Exception) {
+        scope.launch { _events.emit(TransportEvent.TransportError("$context: ${exception.message ?: exception.javaClass.simpleName}")) }
+    }
+
     fun startAdvertising(deviceName: String) {
         val options = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build()
         client.startAdvertising(deviceName, serviceId, connectionLifecycleCallback, options)
+            .addOnFailureListener { e -> emitFailure("Не удалось начать ожидание (advertising)", e) }
     }
 
     fun startDiscovery() {
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build()
         client.startDiscovery(serviceId, endpointDiscoveryCallback, options)
+            .addOnFailureListener { e -> emitFailure("Не удалось начать поиск (discovery)", e) }
     }
 
     fun requestConnection(localDeviceName: String, endpointId: String) {
         client.requestConnection(localDeviceName, endpointId, connectionLifecycleCallback)
+            .addOnFailureListener { e -> emitFailure("Не удалось запросить подключение", e) }
     }
 
     fun acceptConnection(endpointId: String) {
         client.acceptConnection(endpointId, payloadCallback)
+            .addOnFailureListener { e -> emitFailure("Не удалось принять подключение", e) }
     }
 
     fun rejectConnection(endpointId: String) {
