@@ -40,7 +40,6 @@ private val allCategories = listOf(
     CategoryUi(TransferCategory.CONTACTS, R.string.category_contacts),
     CategoryUi(TransferCategory.CALL_LOG, R.string.category_call_log),
     CategoryUi(TransferCategory.CALENDAR, R.string.category_calendar),
-    CategoryUi(TransferCategory.SMS, R.string.category_sms),
     CategoryUi(TransferCategory.MEDIA, R.string.category_media),
     CategoryUi(TransferCategory.FILES, R.string.category_files),
     CategoryUi(TransferCategory.INSTALLED_APPS, R.string.category_installed_apps),

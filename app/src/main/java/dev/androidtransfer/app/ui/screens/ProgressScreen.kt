@@ -1,10 +1,6 @@
 package dev.androidtransfer.app.ui.screens
 
-import android.app.role.RoleManager
-import android.content.Context
 import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,7 +17,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.androidtransfer.app.core.transfer.TransferState
 import dev.androidtransfer.app.ui.viewmodel.Role
@@ -29,20 +24,11 @@ import dev.androidtransfer.app.ui.viewmodel.TransferViewModel
 
 @Composable
 fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
-    val context = LocalContext.current
     val state by viewModel.transferState.collectAsState()
-
-    val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
 
     LaunchedEffect(Unit) {
         if (viewModel.role == Role.SENDER) {
             viewModel.beginSending("${Build.MANUFACTURER} ${Build.MODEL}")
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Receiver doesn't know in advance whether SMS will arrive; offer the role once, upfront, skippable.
-            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
-            if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_SMS) && !roleManager.isRoleHeld(RoleManager.ROLE_SMS)) {
-                roleLauncher.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS))
-            }
         }
     }
 

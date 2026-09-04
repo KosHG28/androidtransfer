@@ -14,14 +14,6 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
-    <!-- SMS: reading/writing the SMS provider requires the app to be the
-         default SMS app on Android; these permissions are requested and the
-         RoleManager default-SMS-app flow is triggered at runtime. -->
-    <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_MMS" />
-    <uses-permission android:name="android.permission.SEND_SMS" />
-
     <!-- Media (scoped storage, API 33+ granular media permissions) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
@@ -91,15 +83,5 @@
             android:name=".core.transfer.TransferForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-
-        <!-- Required so the app can be offered/granted the default-SMS-app role -->
-        <receiver
-            android:name=".modules.sms.SmsDeliverReceiver"
-            android:exported="true"
-            android:permission="android.permission.BROADCAST_SMS">
-            <intent-filter>
-                <action android:name="android.provider.Telephony.SMS_DELIVER" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>

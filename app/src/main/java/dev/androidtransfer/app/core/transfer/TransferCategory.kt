@@ -12,7 +12,6 @@ enum class TransferCategory {
     CONTACTS,
     CALL_LOG,
     CALENDAR,
-    SMS,
     MEDIA,
     FILES,
     INSTALLED_APPS,

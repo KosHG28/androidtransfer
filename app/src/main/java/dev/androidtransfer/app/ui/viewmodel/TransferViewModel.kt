@@ -24,7 +24,6 @@ import dev.androidtransfer.app.modules.contacts.ContactsModule
 import dev.androidtransfer.app.modules.files.CustomFolderModule
 import dev.androidtransfer.app.modules.files.FilesModule
 import dev.androidtransfer.app.modules.media.MediaModule
-import dev.androidtransfer.app.modules.sms.SmsModule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -66,7 +65,6 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
         TransferCategory.CONTACTS to ContactsModule(),
         TransferCategory.CALL_LOG to CallLogModule(),
         TransferCategory.CALENDAR to CalendarModule(),
-        TransferCategory.SMS to SmsModule(),
         TransferCategory.MEDIA to MediaModule(),
         TransferCategory.FILES to FilesModule(filesTreeUri),
         TransferCategory.INSTALLED_APPS to AppsModule(),

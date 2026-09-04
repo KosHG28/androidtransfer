@@ -9,7 +9,6 @@ object Permissions {
         TransferCategory.CONTACTS -> listOf(Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS)
         TransferCategory.CALL_LOG -> listOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.WRITE_CALL_LOG)
         TransferCategory.CALENDAR -> listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
-        TransferCategory.SMS -> listOf(Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS)
         TransferCategory.MEDIA -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
         } else {

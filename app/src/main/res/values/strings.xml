@@ -19,7 +19,6 @@
     <string name="category_contacts">Контакты</string>
     <string name="category_call_log">Журнал звонков</string>
     <string name="category_calendar">Календарь</string>
-    <string name="category_sms">SMS</string>
     <string name="category_media">Фото и видео</string>
     <string name="category_files">Файлы</string>
     <string name="category_installed_apps">Список приложений</string>
