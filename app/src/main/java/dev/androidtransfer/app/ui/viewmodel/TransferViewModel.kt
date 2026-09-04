@@ -75,13 +75,17 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
         TransferCategory.WALLPAPER to WallpaperModule(),
     )
 
-    /** Wires a connected transport to a fresh TransferManager; receivers start listening immediately. */
+    /**
+     * Wires a connected transport to a fresh TransferManager. Both roles
+     * listen: the receiver to route incoming data, the sender because
+     * progress and speed also arrive as transport events.
+     */
     fun attachTransportAndStart(transport: P2pTransport) {
         val manager = TransferManager(getApplication(), transport, buildModules())
         transferManager = manager
         _transferState.value = TransferState.Idle
         viewModelScope.launch { manager.state.collect { _transferState.value = it } }
-        if (role == Role.RECEIVER) manager.startReceiving()
+        manager.startListening()
     }
 
     fun beginSending(deviceName: String) {

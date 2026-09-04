@@ -3,7 +3,9 @@ package dev.androidtransfer.app.core.transfer
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import dev.androidtransfer.app.MainActivity
 import dev.androidtransfer.app.R
@@ -39,5 +41,21 @@ class TransferForegroundService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 42
+
+        /** Keeps the process (and the transport's sockets/Nearby connection) alive while the screen is off or the app is backgrounded. */
+        fun start(context: Context) {
+            val intent = Intent(context, TransferForegroundService::class.java)
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }
+        }
+
+        fun stop(context: Context) {
+            runCatching { context.stopService(Intent(context, TransferForegroundService::class.java)) }
+        }
     }
 }

@@ -28,9 +28,20 @@ object Permissions {
      * fails silently (caught, logged as a transient error, then overwritten
      * by the next successful category).
      */
-    fun forReceiver(): List<String> = TransferCategory.entries
-        .flatMap { forCategory(it) }
+    fun forReceiver(): List<String> = (TransferCategory.entries.flatMap { forCategory(it) } + writeStorageIfNeeded() + notificationsIfNeeded())
         .distinct()
+
+    /** Everything the given selection needs, plus the notification permission the transfer service needs. */
+    fun forSelection(categories: Collection<TransferCategory>): List<String> =
+        (categories.flatMap { forCategory(it) } + notificationsIfNeeded()).distinct()
+
+    /** Pre-Android-10 receivers write incoming files straight into public storage. */
+    private fun writeStorageIfNeeded(): List<String> =
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) listOf(Manifest.permission.WRITE_EXTERNAL_STORAGE) else emptyList()
+
+    /** Without this the foreground-service notification that keeps a transfer alive is invisible on API 33+. */
+    private fun notificationsIfNeeded(): List<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) listOf(Manifest.permission.POST_NOTIFICATIONS) else emptyList()
 
     /** Permissions the Nearby (Wi-Fi) transport needs before advertising/discovering. */
     fun forNearby(): List<String> {

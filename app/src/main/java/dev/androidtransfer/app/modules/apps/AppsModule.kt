@@ -115,7 +115,7 @@ class AppsModule : TransferModule {
             if (ApkInstaller.isInstalled(context, packageName)) {
                 parts.forEach { it.delete() }
             } else {
-                runCatching { ApkInstaller.install(context, packageName, parts) }
+                ApkInstaller.enqueue(context, packageName, parts)
             }
         }
     }

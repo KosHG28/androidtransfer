@@ -1,5 +1,6 @@
 package dev.androidtransfer.app.ui.screens
 
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,11 +23,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import dev.androidtransfer.app.core.transfer.Permissions
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.modules.appdata.WhatsAppModule
@@ -50,7 +57,18 @@ private val groups: List<Pair<String, List<TransferCategory>>> = listOf(
 fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit) {
     val context = LocalContext.current
 
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
+    var denied by remember { mutableStateOf<List<String>>(emptyList()) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        denied = result.filterValues { granted -> !granted }.keys.toList()
+    }
+
+    // Categories start pre-checked, so their checkboxes are never tapped and
+    // onCheckedChange never fires for them — without this, contacts/call log/
+    // calendar exports hit the provider with no permission and fail.
+    LaunchedEffect(Unit) {
+        val perms = Permissions.forSelection(viewModel.selectedCategories.toList())
+        if (perms.isNotEmpty()) permissionLauncher.launch(perms.toTypedArray())
+    }
 
     val filesPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         uri?.let {
@@ -145,7 +163,32 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit) {
                 }
             }
 
-            Button(onClick = onStart, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+            if (denied.isNotEmpty()) {
+                Text(
+                    "Без этих разрешений соответствующие категории перенести не получится: " +
+                        denied.joinToString(", ") { it.substringAfterLast('.') },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                OutlinedButton(onClick = {
+                    permissionLauncher.launch(Permissions.forSelection(viewModel.selectedCategories.toList()).toTypedArray())
+                }) { Text("Запросить снова") }
+            }
+
+            Button(
+                onClick = {
+                    // Re-check right before starting: the selection may have changed
+                    // since the screen opened, and a missing permission here means that
+                    // category silently exports nothing. Asking once is enough — if the
+                    // user deliberately said no, let them start anyway.
+                    val missing = Permissions.forSelection(viewModel.selectedCategories.toList())
+                        .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                        .filterNot { it in denied }
+                    if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else onStart()
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            ) {
                 Text("Начать перенос")
             }
         }

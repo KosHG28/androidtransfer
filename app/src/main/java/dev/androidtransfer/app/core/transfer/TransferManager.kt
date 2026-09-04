@@ -97,8 +97,14 @@ class TransferManager(
         }
     }
 
-    /** Starts listening for incoming protocol events; call once a connection is established on the receiving side. */
-    fun startReceiving() {
+    /**
+     * Starts consuming transport events; call once a connection is
+     * established, on BOTH sides. The receiver needs it to route incoming
+     * data, and the sender needs it too — progress/speed ticks arrive as
+     * transport events, so without this the sending phone shows a transfer
+     * with no progress bar and no speed at all.
+     */
+    fun startListening() {
         scope.launch {
             transport.events.collect { event ->
                 when (event) {
@@ -110,7 +116,7 @@ class TransferManager(
                     is TransportEvent.TransportError -> _state.value = TransferState.Error(event.message)
                     is TransportEvent.Progress -> {
                         onProgress(event.itemId, event.bytesTransferred, event.totalBytes)
-                        emitRunning()
+                        emitRunningUnlessFinished()
                     }
                     is TransportEvent.MessageReceived -> handleMessage(event.message)
                     is TransportEvent.FileReceived -> handleFile(event.header, event.file)
@@ -183,6 +189,12 @@ class TransferManager(
 
     private fun snapshotCategories(): List<CategoryProgress> =
         categoryOrder.map { CategoryProgress(it, categoryStatus[it] ?: CategoryStatus.PENDING) }
+
+    /** Late progress ticks must not drag a finished transfer back to "running". */
+    private fun emitRunningUnlessFinished() {
+        if (_state.value is TransferState.Completed || _state.value is TransferState.Error) return
+        emitRunning()
+    }
 
     private fun emitRunning() {
         _state.value = TransferState.Running(

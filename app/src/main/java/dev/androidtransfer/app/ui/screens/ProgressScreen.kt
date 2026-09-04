@@ -22,23 +22,36 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.androidtransfer.app.core.transfer.CategoryProgress
 import dev.androidtransfer.app.core.transfer.CategoryStatus
 import dev.androidtransfer.app.core.transfer.Format
+import dev.androidtransfer.app.core.transfer.TransferForegroundService
 import dev.androidtransfer.app.core.transfer.TransferState
+import dev.androidtransfer.app.modules.apps.ApkInstaller
 import dev.androidtransfer.app.ui.viewmodel.Role
 import dev.androidtransfer.app.ui.viewmodel.TransferViewModel
 
 @Composable
 fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
+    val context = LocalContext.current
     val state by viewModel.transferState.collectAsState()
+
+    // Without this the transfer dies as soon as the screen turns off or the
+    // user switches apps — the service exists purely to hold the process up
+    // for the duration of the transfer.
+    DisposableEffect(Unit) {
+        TransferForegroundService.start(context)
+        onDispose { TransferForegroundService.stop(context) }
+    }
 
     LaunchedEffect(Unit) {
         if (viewModel.role == Role.SENDER) {
@@ -53,6 +66,15 @@ fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
     Scaffold { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Идёт перенос…", style = MaterialTheme.typography.headlineSmall)
+
+            val pendingInstalls by ApkInstaller.remaining.collectAsState()
+            if (pendingInstalls > 0) {
+                Text(
+                    "Приложений в очереди на установку: $pendingInstalls — подтверждайте установку по очереди",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
 
             when (val s = state) {
                 is TransferState.Running -> RunningContent(s)

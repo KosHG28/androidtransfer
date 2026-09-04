@@ -66,22 +66,38 @@ class MediaModule : TransferModule {
     override suspend fun importFile(context: Context, header: ProtocolMessage.FileHeader, file: File) {
         val isVideo = header.mimeType?.startsWith("video/") == true
         val collectionUri = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val defaultDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            // Pre-scoped-storage: MediaStore has no RELATIVE_PATH and won't
+            // create the file for us — write it into public storage first,
+            // then register the real path so it shows up in the gallery.
+            @Suppress("DEPRECATION")
+            val destDir = File(Environment.getExternalStoragePublicDirectory(defaultDir), "AndroidTransfer")
+            destDir.mkdirs()
+            val destFile = File(destDir, header.displayName)
+            destFile.outputStream().use { out -> file.inputStream().use { it.copyTo(out) } }
+            val legacyValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, header.displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, header.mimeType)
+                @Suppress("DEPRECATION")
+                put(MediaStore.MediaColumns.DATA, destFile.absolutePath)
+            }
+            context.contentResolver.insert(collectionUri, legacyValues)
+            return
+        }
+
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, header.displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, header.mimeType)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val relDir = header.relativePath ?: (if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES) + "/AndroidTransfer/"
-                put(MediaStore.MediaColumns.RELATIVE_PATH, relDir)
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
+            put(MediaStore.MediaColumns.RELATIVE_PATH, header.relativePath ?: "$defaultDir/AndroidTransfer/")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val itemUri = context.contentResolver.insert(collectionUri, values) ?: error("Could not create media entry")
         context.contentResolver.openOutputStream(itemUri)?.use { out ->
             file.inputStream().use { input -> input.copyTo(out) }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
-            context.contentResolver.update(itemUri, done, null, null)
-        }
+        val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+        context.contentResolver.update(itemUri, done, null, null)
     }
 }

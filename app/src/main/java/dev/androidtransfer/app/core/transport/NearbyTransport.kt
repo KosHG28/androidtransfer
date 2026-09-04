@@ -69,6 +69,14 @@ class NearbyTransport(
     private val pendingFileHeaders = ConcurrentHashMap<Long, ProtocolMessage.FileHeader>()
     private val pendingFilePayloads = ConcurrentHashMap<Long, Payload>()
 
+    /**
+     * Outgoing payloads staged in cacheDir, keyed by payload id. Nearby reads
+     * these asynchronously, so they can only be deleted once the transfer
+     * reports a result — otherwise a large photo/APK transfer leaves a full
+     * second copy of everything behind in the cache.
+     */
+    private val stagedOutgoingFiles = ConcurrentHashMap<Long, File>()
+
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             when (payload.type) {
@@ -97,12 +105,21 @@ class NearbyTransport(
             }
             if (update.status == PayloadTransferUpdate.Status.SUCCESS) {
                 tryCompleteFile(update.payloadId)
+                releaseStagedOutgoing(update.payloadId)
             } else if (update.status == PayloadTransferUpdate.Status.FAILURE) {
                 pendingFileHeaders.remove(update.payloadId)
                 pendingFilePayloads.remove(update.payloadId)
+                releaseStagedOutgoing(update.payloadId)
                 scope.launch { _events.emit(TransportEvent.TransportError("File transfer failed")) }
             }
         }
+    }
+
+    /** Drops our own staged copy of an outgoing file, and its progress bookkeeping, once Nearby is done with it. */
+    private fun releaseStagedOutgoing(payloadId: Long) {
+        val staged = stagedOutgoingFiles.remove(payloadId) ?: return
+        staged.delete()
+        pendingFileHeaders.remove(payloadId)
     }
 
     /** Fires FileReceived once both the header and a fully-transferred payload are present. */
@@ -203,14 +220,25 @@ class NearbyTransport(
         val staged = File(appContext.cacheDir, "outgoing_${UUID.randomUUID()}")
         open().use { input -> staged.outputStream().use { output -> input.copyTo(output) } }
         val filePayload = Payload.fromFile(staged)
+
+        // Registering the header against the outgoing payload id is what lets
+        // onPayloadTransferUpdate report progress on the *sending* side too;
+        // the staged copy is deleted when that same callback reports a result.
+        stagedOutgoingFiles[filePayload.id] = staged
+        pendingFileHeaders[filePayload.id] = header.copy(nearbyPayloadId = filePayload.id)
+
         sendMessage(header.copy(nearbyPayloadId = filePayload.id))
         client.sendPayload(endpointId, filePayload).await()
-        staged.deleteOnExit()
     }
 
     override fun close() {
         connectedEndpointId?.let { client.disconnectFromEndpoint(it) }
         client.stopAllEndpoints()
         stopDiscoveryAndAdvertising()
+        // Anything still staged here belongs to a transfer that never finished.
+        stagedOutgoingFiles.values.forEach { runCatching { it.delete() } }
+        stagedOutgoingFiles.clear()
+        appContext.cacheDir.listFiles { file -> file.name.startsWith("outgoing_") }
+            ?.forEach { runCatching { it.delete() } }
     }
 }
