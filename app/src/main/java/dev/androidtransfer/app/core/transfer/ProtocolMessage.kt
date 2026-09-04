@@ -1,0 +1,69 @@
+package dev.androidtransfer.app.core.transfer
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+/**
+ * The wire protocol spoken over both transports (Nearby Connections BYTES
+ * payloads on Wi-Fi, and length-prefixed control frames on the USB socket).
+ * kotlinx.serialization discovers all sealed subtypes automatically and
+ * tags each with the "type" discriminator configured in [ProtocolJson].
+ */
+@Serializable
+sealed interface ProtocolMessage {
+
+    @Serializable
+    @SerialName("hello")
+    data class Hello(val sessionId: String, val deviceName: String, val appVersion: String) : ProtocolMessage
+
+    @Serializable
+    @SerialName("manifest")
+    data class Manifest(val sessionId: String, val categories: List<TransferCategory>) : ProtocolMessage
+
+    /** A whole category's worth of small records (contacts, SMS, call log, calendar, app list) sent as one JSON array. */
+    @Serializable
+    @SerialName("records")
+    data class Records(val category: TransferCategory, val jsonArray: String, val count: Int) : ProtocolMessage
+
+    /** Announces a file that will follow (Nearby: a correlated FILE payload; USB: raw bytes on the same stream). */
+    @Serializable
+    @SerialName("file_header")
+    data class FileHeader(
+        val itemId: String,
+        val category: TransferCategory,
+        val displayName: String,
+        val sizeBytes: Long,
+        val mimeType: String?,
+        val relativePath: String? = null,
+        val nearbyPayloadId: Long? = null,
+    ) : ProtocolMessage
+
+    @Serializable
+    @SerialName("category_start")
+    data class CategoryStart(val category: TransferCategory, val totalItems: Int, val totalBytes: Long) : ProtocolMessage
+
+    @Serializable
+    @SerialName("category_done")
+    data class CategoryDone(val category: TransferCategory, val itemsSent: Int) : ProtocolMessage
+
+    @Serializable
+    @SerialName("transfer_done")
+    data class TransferDone(val sessionId: String) : ProtocolMessage
+
+    @Serializable
+    @SerialName("ack")
+    data class Ack(val itemId: String) : ProtocolMessage
+
+    @Serializable
+    @SerialName("error")
+    data class Error(val category: TransferCategory?, val message: String) : ProtocolMessage
+}
+
+object ProtocolJson {
+    val instance: Json = Json {
+        classDiscriminator = "type"
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The USB-tether transport talks directly, socket-to-socket, over the local
+  link created between the two phones (never over the public internet), so
+  cleartext is permitted at the base level. All application data placed on
+  that socket is still framed/checksummed by our own protocol
+  (see core/transport/UsbTetherTransport.kt).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

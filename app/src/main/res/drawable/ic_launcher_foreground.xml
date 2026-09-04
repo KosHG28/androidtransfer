@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Two overlapping arrows suggesting bidirectional device-to-device transfer -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,38 L30,62 L20,62 L38,80 L56,62 L46,62 L46,38 Z" />
+    <path
+        android:fillColor="#A5D6A7"
+        android:pathData="M78,70 L78,46 L88,46 L70,28 L52,46 L62,46 L62,70 Z" />
+</vector>
