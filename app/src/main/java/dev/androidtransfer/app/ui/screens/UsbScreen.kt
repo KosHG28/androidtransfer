@@ -77,15 +77,27 @@ fun UsbScreen(viewModel: TransferViewModel, onConnected: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
             )
 
-            Text(
-                if (localAddresses.isEmpty()) {
-                    "IP этого телефона на USB-интерфейсе: не обнаружен (включите USB-модем и подождите пару секунд)"
-                } else {
-                    "IP этого телефона на USB-интерфейсе: ${localAddresses.joinToString(", ")}\n(этот адрес нужно ввести на ВТОРОМ телефоне, если на нём выбрано «Подключиться»)"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = if (localAddresses.isEmpty()) Color.Gray else MaterialTheme.colorScheme.primary,
-            )
+            Text("IP этого телефона на USB-интерфейсе:", style = MaterialTheme.typography.bodySmall)
+            if (localAddresses.isEmpty()) {
+                Text(
+                    "не обнаружен (включите USB-модем и подождите пару секунд)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                )
+            } else {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(
+                        localAddresses.joinToString(", "),
+                        style = MaterialTheme.typography.headlineSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Text(
+                    "Этот адрес нужно ввести на ВТОРОМ телефоне, если на нём выбрано «Подключиться»",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                )
+            }
 
             Text(status)
 

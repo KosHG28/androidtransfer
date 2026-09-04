@@ -66,12 +66,10 @@ class ContactsModule : TransferModule {
             val ops = ArrayList<ContentProviderOperation>()
             for (record in chunk) {
                 val rawContactIndex = ops.size
-                ops.add(
-                    ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
-                        .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
-                        .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
-                        .build(),
-                )
+                // Omitting ACCOUNT_TYPE/ACCOUNT_NAME (rather than passing null through
+                // ContentProviderOperation.Builder.withValue, which is unreliable) leaves
+                // the row NULL, which is what makes it a local, account-less contact.
+                ops.add(ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI).build())
                 if (!record.displayName.isNullOrBlank()) {
                     ops.add(
                         ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)

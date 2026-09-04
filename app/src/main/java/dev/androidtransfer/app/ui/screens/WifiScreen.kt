@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.android.gms.nearby.connection.DiscoveredEndpointInfo
 import dev.androidtransfer.app.R
 import dev.androidtransfer.app.core.transfer.Permissions
@@ -94,7 +95,17 @@ fun WifiScreen(viewModel: TransferViewModel, onConnected: () -> Unit) {
         AlertDialog(
             onDismissRequest = { },
             title = { Text(stringResource(R.string.pairing_title)) },
-            text = { Text(digits, style = MaterialTheme.typography.displaySmall) },
+            text = {
+                Text(
+                    digits,
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        letterSpacing = 4.sp,
+                    ),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
             confirmButton = {
                 Button(onClick = {
                     // Both sides of a Nearby connection must call acceptConnection

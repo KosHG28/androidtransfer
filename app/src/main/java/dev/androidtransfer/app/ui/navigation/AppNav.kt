@@ -42,7 +42,7 @@ fun AppNav() {
             })
         }
         composable(Routes.TRANSPORT) {
-            TransportScreen(onTransportChosen = { kind ->
+            TransportScreen(viewModel, onTransportChosen = { kind ->
                 viewModel.transportKind = kind
                 navController.navigate(if (kind == TransportKind.WIFI) Routes.WIFI else Routes.USB)
             })
@@ -64,6 +64,7 @@ fun AppNav() {
         }
         composable(Routes.SUMMARY) {
             SummaryScreen(
+                viewModel,
                 onOpenApps = { navController.navigate(Routes.APPS) },
                 onFinish = { navController.popBackStack(Routes.HOME, inclusive = false) },
             )

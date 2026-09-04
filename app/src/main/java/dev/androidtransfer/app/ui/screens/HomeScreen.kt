@@ -1,10 +1,20 @@
 package dev.androidtransfer.app.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -24,16 +34,36 @@ fun HomeScreen(onRoleChosen: (Role) -> Unit) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineMedium)
-            Text(stringResource(R.string.home_subtitle), style = MaterialTheme.typography.bodyMedium)
-            Column(modifier = Modifier.padding(top = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { onRoleChosen(Role.SENDER) }) {
-                    Text(stringResource(R.string.home_role_send))
-                }
-                Button(onClick = { onRoleChosen(Role.RECEIVER) }) {
-                    Text(stringResource(R.string.home_role_receive))
-                }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Filled.PhoneAndroid, contentDescription = null, modifier = Modifier.size(40.dp))
+                Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Filled.PhoneAndroid, contentDescription = null, modifier = Modifier.size(40.dp))
             }
+            Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 16.dp))
+            Text(stringResource(R.string.home_subtitle), style = MaterialTheme.typography.bodyMedium)
+
+            Column(modifier = Modifier.padding(top = 32.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                RoleCard(
+                    icon = Icons.Filled.Upload,
+                    label = stringResource(R.string.home_role_send),
+                    onClick = { onRoleChosen(Role.SENDER) },
+                )
+                RoleCard(
+                    icon = Icons.Filled.Download,
+                    label = stringResource(R.string.home_role_receive),
+                    onClick = { onRoleChosen(Role.RECEIVER) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoleCard(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(modifier = Modifier.padding(20.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 16.dp))
+            Text(label, style = MaterialTheme.typography.titleMedium)
         }
     }
 }

@@ -1,15 +1,22 @@
 package dev.androidtransfer.app.ui.screens
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -20,26 +27,22 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.androidtransfer.app.core.transfer.CategoryProgress
+import dev.androidtransfer.app.core.transfer.CategoryStatus
+import dev.androidtransfer.app.core.transfer.Format
 import dev.androidtransfer.app.core.transfer.TransferState
 import dev.androidtransfer.app.ui.viewmodel.Role
 import dev.androidtransfer.app.ui.viewmodel.TransferViewModel
 
 @Composable
 fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
-    val context = LocalContext.current
     val state by viewModel.transferState.collectAsState()
 
     LaunchedEffect(Unit) {
         if (viewModel.role == Role.SENDER) {
             viewModel.beginSending("${Build.MANUFACTURER} ${Build.MODEL}")
-        } else if (!context.packageManager.canRequestPackageInstalls()) {
-            // Installing transferred APKs needs this granted once; apps that arrive
-            // before the user grants it just fall back to the Play Store list.
-            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            runCatching { context.startActivity(intent) }
         }
     }
 
@@ -48,34 +51,85 @@ fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
     }
 
     Scaffold { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Идёт перенос…", style = MaterialTheme.typography.headlineSmall)
-            Text(describeState(state), modifier = Modifier.padding(top = 8.dp))
 
-            val progress = (state as? TransferState.ItemProgress)
-            if (progress != null && progress.totalBytes > 0) {
-                LinearProgressIndicator(
-                    progress = { (progress.bytesTransferred.toFloat() / progress.totalBytes).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                )
-            }
-
-            if (state is TransferState.Error) {
-                Button(onClick = onDone, modifier = Modifier.padding(top = 16.dp)) { Text("Закрыть") }
+            when (val s = state) {
+                is TransferState.Running -> RunningContent(s)
+                is TransferState.Error -> {
+                    Icon(Icons.Filled.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Text("Ошибка: ${s.message}", color = MaterialTheme.colorScheme.error)
+                    Button(onClick = onDone) { Text("Закрыть") }
+                }
+                else -> {
+                    CircularProgressIndicator()
+                    Text("Подготовка…")
+                }
             }
         }
     }
 }
 
-private fun describeState(state: TransferState): String = when (state) {
-    TransferState.Idle -> "Подготовка…"
-    is TransferState.Connected -> "Подключено к ${state.peerName}"
-    is TransferState.RunningCategory -> "Категория: ${state.category}"
-    is TransferState.ItemProgress -> "Передача файла: ${state.bytesTransferred / 1024} / ${state.totalBytes / 1024} КБ"
-    TransferState.Completed -> "Готово"
-    is TransferState.Error -> "Ошибка: ${state.message}"
+@Composable
+private fun RunningContent(state: TransferState.Running) {
+    val total = state.categories.size
+    val done = state.categories.count { it.status == CategoryStatus.DONE || it.status == CategoryStatus.FAILED }
+
+    state.peerName?.let { Text("Подключено к $it", style = MaterialTheme.typography.bodyMedium) }
+
+    if (total > 0) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("$done из $total категорий", style = MaterialTheme.typography.bodySmall)
+            LinearProgressIndicator(
+                progress = { done.toFloat() / total },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        items(state.categories) { CategoryRow(it) }
+    }
+
+    if (state.currentFileTotalBytes > 0) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    "${Format.megabytes(state.currentFileBytesTransferred)} / ${Format.megabytes(state.currentFileTotalBytes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                val speedText = Format.speed(state.speedBytesPerSecond)
+                if (speedText.isNotEmpty()) Text(speedText, style = MaterialTheme.typography.bodySmall)
+            }
+            LinearProgressIndicator(
+                progress = { (state.currentFileBytesTransferred.toFloat() / state.currentFileTotalBytes).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryRow(progress: CategoryProgress) {
+    val info = categoryUiInfo(progress.category)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(info.icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            Text(
+                stringResource(info.labelRes),
+                modifier = Modifier.padding(start = 12.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        when (progress.status) {
+            CategoryStatus.PENDING -> Icon(Icons.Filled.RadioButtonUnchecked, contentDescription = "Ожидает", tint = MaterialTheme.colorScheme.outline)
+            CategoryStatus.RUNNING -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            CategoryStatus.DONE -> Icon(Icons.Filled.CheckCircle, contentDescription = "Готово", tint = MaterialTheme.colorScheme.primary)
+            CategoryStatus.FAILED -> Icon(Icons.Filled.Error, contentDescription = "Ошибка", tint = MaterialTheme.colorScheme.error)
+        }
+    }
 }

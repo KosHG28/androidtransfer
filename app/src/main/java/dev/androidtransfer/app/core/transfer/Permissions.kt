@@ -19,6 +19,19 @@ object Permissions {
         TransferCategory.WALLPAPER -> emptyList() // SET_WALLPAPER is a normal (install-time) permission; reading has no permission to request, only an OS-version restriction
     }
 
+    /**
+     * The receiver doesn't choose categories — the sender does — so it can't
+     * request permissions "as the user checks a box" the way CategorySelectionScreen
+     * does. It has to ask for everything any category might need up front,
+     * before a connection even starts: incoming data has no way to wait for
+     * a permission dialog mid-transfer, so anything requested late just
+     * fails silently (caught, logged as a transient error, then overwritten
+     * by the next successful category).
+     */
+    fun forReceiver(): List<String> = TransferCategory.entries
+        .flatMap { forCategory(it) }
+        .distinct()
+
     /** Permissions the Nearby (Wi-Fi) transport needs before advertising/discovering. */
     fun forNearby(): List<String> {
         val base = mutableListOf(
