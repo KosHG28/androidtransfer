@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,3 +42,19 @@ jobs:
           name: androidtransfer-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # actions/upload-artifact only attaches the APK to this workflow run
+      # (Actions tab, expires after 90 days). Publishing it as a Release
+      # asset too is what makes it show up under the repo's Releases page
+      # and gives it a stable download link.
+      - name: Publish APK to GitHub Releases
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: debug-latest
+          name: "Debug build (latest)"
+          body: |
+            Автоматическая debug-сборка последнего коммита ветки `${{ github.ref_name }}` (`${{ github.sha }}`).
+            Собирается автоматически при каждом push в этот workflow (Build APK) и заменяет предыдущий APK в этом релизе.
+          prerelease: true
+          files: app/build/outputs/apk/debug/*.apk
