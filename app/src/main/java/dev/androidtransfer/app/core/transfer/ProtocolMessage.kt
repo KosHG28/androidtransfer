@@ -26,7 +26,13 @@ sealed interface ProtocolMessage {
     @SerialName("records")
     data class Records(val category: TransferCategory, val jsonArray: String, val count: Int) : ProtocolMessage
 
-    /** Announces a file that will follow (Nearby: a correlated FILE payload; USB: raw bytes on the same stream). */
+    /**
+     * Announces a file that will follow (Nearby: a correlated FILE payload;
+     * USB: raw bytes on the same stream). [groupKey] and [isFinalPart] let a
+     * module send several files that belong together (e.g. an app's base
+     * APK plus split APKs) and know on the receiving end when the whole
+     * group has arrived — everything else defaults to "one file, done".
+     */
     @Serializable
     @SerialName("file_header")
     data class FileHeader(
@@ -37,6 +43,8 @@ sealed interface ProtocolMessage {
         val mimeType: String?,
         val relativePath: String? = null,
         val nearbyPayloadId: Long? = null,
+        val groupKey: String? = null,
+        val isFinalPart: Boolean = true,
     ) : ProtocolMessage
 
     @Serializable

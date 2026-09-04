@@ -15,6 +15,7 @@ enum class TransferCategory {
     MEDIA,
     FILES,
     INSTALLED_APPS,
+    WALLPAPER,
     WHATSAPP_MEDIA,
     CUSTOM_FOLDER,
 }

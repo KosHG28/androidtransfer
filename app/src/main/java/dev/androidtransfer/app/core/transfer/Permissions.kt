@@ -16,6 +16,7 @@ object Permissions {
         }
         TransferCategory.FILES, TransferCategory.CUSTOM_FOLDER, TransferCategory.WHATSAPP_MEDIA -> emptyList() // granted via SAF folder picker instead
         TransferCategory.INSTALLED_APPS -> emptyList()
+        TransferCategory.WALLPAPER -> emptyList() // SET_WALLPAPER is a normal (install-time) permission; reading has no permission to request, only an OS-version restriction
     }
 
     /** Permissions the Nearby (Wi-Fi) transport needs before advertising/discovering. */

@@ -1,6 +1,9 @@
 package dev.androidtransfer.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +20,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.androidtransfer.app.core.transfer.TransferState
 import dev.androidtransfer.app.ui.viewmodel.Role
@@ -24,11 +28,18 @@ import dev.androidtransfer.app.ui.viewmodel.TransferViewModel
 
 @Composable
 fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
+    val context = LocalContext.current
     val state by viewModel.transferState.collectAsState()
 
     LaunchedEffect(Unit) {
         if (viewModel.role == Role.SENDER) {
             viewModel.beginSending("${Build.MANUFACTURER} ${Build.MODEL}")
+        } else if (!context.packageManager.canRequestPackageInstalls()) {
+            // Installing transferred APKs needs this granted once; apps that arrive
+            // before the user grants it just fall back to the Play Store list.
+            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(intent) }
         }
     }
 

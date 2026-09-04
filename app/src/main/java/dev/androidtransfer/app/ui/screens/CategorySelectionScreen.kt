@@ -45,6 +45,7 @@ private val allCategories = listOf(
     CategoryUi(TransferCategory.INSTALLED_APPS, R.string.category_installed_apps),
     CategoryUi(TransferCategory.WHATSAPP_MEDIA, R.string.category_whatsapp_media),
     CategoryUi(TransferCategory.CUSTOM_FOLDER, R.string.category_custom_folder),
+    CategoryUi(TransferCategory.WALLPAPER, R.string.category_wallpaper),
 )
 
 @Composable

@@ -24,6 +24,7 @@ import dev.androidtransfer.app.modules.contacts.ContactsModule
 import dev.androidtransfer.app.modules.files.CustomFolderModule
 import dev.androidtransfer.app.modules.files.FilesModule
 import dev.androidtransfer.app.modules.media.MediaModule
+import dev.androidtransfer.app.modules.wallpaper.WallpaperModule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -43,6 +44,7 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
         TransferCategory.CALENDAR,
         TransferCategory.MEDIA,
         TransferCategory.INSTALLED_APPS,
+        TransferCategory.WALLPAPER,
     )
 
     var filesTreeUri by mutableStateOf<Uri?>(null)
@@ -70,6 +72,7 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
         TransferCategory.INSTALLED_APPS to AppsModule(),
         TransferCategory.WHATSAPP_MEDIA to WhatsAppModule(whatsappTreeUri),
         TransferCategory.CUSTOM_FOLDER to CustomFolderModule(customFolderTreeUri),
+        TransferCategory.WALLPAPER to WallpaperModule(),
     )
 
     /** Wires a connected transport to a fresh TransferManager; receivers start listening immediately. */

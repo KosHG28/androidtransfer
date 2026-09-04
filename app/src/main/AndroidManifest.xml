@@ -23,9 +23,13 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
-    <!-- Installed apps list (for reinstall-via-Play-Store flow) -->
+    <!-- Installed apps: listing them, and reinstalling from their own APK bytes via PackageInstaller -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Wallpaper (best-effort restore) -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
     <!-- Wireless transport: Wi-Fi Direct / Nearby Connections -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -83,5 +87,11 @@
             android:name=".core.transfer.TransferForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Delivers PackageInstaller session results; must be exported since the
+             system's PackageInstaller service (a different UID) sends the callback. -->
+        <receiver
+            android:name=".modules.apps.ApkInstallReceiver"
+            android:exported="true" />
     </application>
 </manifest>

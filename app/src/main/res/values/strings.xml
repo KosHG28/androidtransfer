@@ -21,9 +21,10 @@
     <string name="category_calendar">Календарь</string>
     <string name="category_media">Фото и видео</string>
     <string name="category_files">Файлы</string>
-    <string name="category_installed_apps">Список приложений</string>
+    <string name="category_installed_apps">Приложения (APK + список для Play Store)</string>
     <string name="category_whatsapp_media">WhatsApp (медиа и локальная резервная копия)</string>
     <string name="category_custom_folder">Своя папка</string>
+    <string name="category_wallpaper">Обои рабочего стола</string>
 
     <string name="pairing_title">Подтвердите код на обоих телефонах</string>
     <string name="pairing_waiting">Ожидание второго устройства…</string>
