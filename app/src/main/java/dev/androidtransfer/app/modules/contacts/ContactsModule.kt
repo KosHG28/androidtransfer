@@ -104,7 +104,14 @@ class ContactsModule : TransferModule {
             val ops = ArrayList<ContentProviderOperation>()
             for (record in chunk) {
                 val rawContactIndex = ops.size
+                // ContentProviderOperation.Builder never allocates its internal
+                // ContentValues until the first withValue() call — build() with
+                // none at all leaves it null, and applyBatch's own back-reference
+                // resolution NPEs on ContentValues.keySet() when there's no
+                // account to set. AGGREGATION_MODE_DEFAULT is a harmless value
+                // that's correct either way, so it's set unconditionally.
                 val rawContact = ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                    .withValue(ContactsContract.RawContacts.AGGREGATION_MODE, ContactsContract.RawContacts.AGGREGATION_MODE_DEFAULT)
                 if (account != null) {
                     rawContact.withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, account.first)
                     rawContact.withValue(ContactsContract.RawContacts.ACCOUNT_NAME, account.second)

@@ -1,6 +1,7 @@
 package dev.androidtransfer.app.core.transport
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.AdvertisingOptions
 import com.google.android.gms.nearby.connection.ConnectionInfo
@@ -122,14 +123,41 @@ class NearbyTransport(
         pendingFileHeaders.remove(payloadId)
     }
 
-    /** Fires FileReceived once both the header and a fully-transferred payload are present. */
+    /**
+     * Fires FileReceived once both the header and a fully-transferred payload
+     * are present. Nearby stages completed FILE payloads outside the app's
+     * own storage — on some devices under the shared
+     * `/storage/emulated/0/Download/.nearby/` — and [Payload.File.asJavaFile]
+     * hands back a raw path into that location. Opening it with a plain
+     * `File.inputStream()` then fails with EACCES, because the app holds no
+     * general filesystem permission for shared storage outside MediaStore/SAF.
+     * [Payload.File.asParcelFileDescriptor] sidesteps that: Nearby opened the
+     * descriptor itself, so reading through it doesn't need our own
+     * permission. We copy through it once into our private cache so every
+     * downstream module — which just expects a plain, readable [File] —
+     * keeps working unchanged.
+     */
     private fun tryCompleteFile(payloadId: Long) {
         val header = pendingFileHeaders[payloadId] ?: return
         val payload = pendingFilePayloads[payloadId] ?: return
-        val javaFile = payload.asFile()?.asJavaFile() ?: return
+        val payloadFile = payload.asFile() ?: return
         pendingFileHeaders.remove(payloadId)
         pendingFilePayloads.remove(payloadId)
-        scope.launch { _events.emit(TransportEvent.FileReceived(header, javaFile)) }
+        scope.launch {
+            val privateCopy = File(appContext.cacheDir, "incoming_${UUID.randomUUID()}")
+            val copied = runCatching {
+                val pfd = payloadFile.asParcelFileDescriptor() ?: error("No file descriptor for payload")
+                ParcelFileDescriptor.AutoCloseInputStream(pfd).use { input ->
+                    privateCopy.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+            if (copied.isSuccess) {
+                _events.emit(TransportEvent.FileReceived(header, privateCopy))
+            } else {
+                privateCopy.delete()
+                _events.emit(TransportEvent.TransportError("Не удалось прочитать принятый файл: ${copied.exceptionOrNull()?.message}"))
+            }
+        }
     }
 
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
