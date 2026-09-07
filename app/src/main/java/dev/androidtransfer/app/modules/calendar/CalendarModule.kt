@@ -73,7 +73,9 @@ class CalendarModule : TransferModule {
 
     override suspend fun importRecords(context: Context, jsonArray: String) {
         val records = Json.decodeFromString<List<CalendarEventRecord>>(jsonArray)
+        if (records.isEmpty()) return
         val calendarId = ensureLocalCalendar(context)
+        var inserted = 0
         for (record in records) {
             val values = ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, calendarId)
@@ -91,7 +93,13 @@ class CalendarModule : TransferModule {
                     put(CalendarContract.Events.DTEND, record.dtEnd ?: record.dtStart)
                 }
             }
-            context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+            if (context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) != null) inserted++
+        }
+        // Matches the same silent-drop failure mode already confirmed for
+        // Contacts on this project: applyBatch/insert can report success on
+        // some OEM providers while writing nothing.
+        if (inserted <= 0) {
+            error("Провайдер календаря не принял ни одной записи")
         }
     }
 

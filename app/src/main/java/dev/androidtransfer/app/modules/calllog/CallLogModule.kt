@@ -53,6 +53,7 @@ class CallLogModule : TransferModule {
 
     override suspend fun importRecords(context: Context, jsonArray: String) {
         val records = Json.decodeFromString<List<CallLogRecord>>(jsonArray)
+        if (records.isEmpty()) return
         val values = records.map { record ->
             ContentValues().apply {
                 put(CallLog.Calls.NUMBER, record.number)
@@ -63,8 +64,12 @@ class CallLogModule : TransferModule {
                 put(CallLog.Calls.NEW, 0)
             }
         }.toTypedArray()
-        if (values.isNotEmpty()) {
-            context.contentResolver.bulkInsert(CallLog.Calls.CONTENT_URI, values)
+        val inserted = context.contentResolver.bulkInsert(CallLog.Calls.CONTENT_URI, values)
+        // Some OEM providers (confirmed on this project with Contacts) accept
+        // the call silently but write nothing — a bare success icon would be
+        // indistinguishable from an actual transfer.
+        if (inserted <= 0) {
+            error("Провайдер журнала вызовов не принял ни одной записи")
         }
     }
 }

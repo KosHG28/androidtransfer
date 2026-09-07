@@ -69,6 +69,18 @@ class TransferManager(
     private var speedBytesPerSecond = 0.0
 
     /**
+     * Set once the transport reports the peer gone. Without this, a
+     * disconnect mid-transfer only affected the UI via the Disconnected event
+     * handler below — the sender's own send loop (a separate coroutine) kept
+     * walking the remaining categories regardless, since sendMessage/sendFile
+     * on a dead transport just silently no-op rather than throw. It would
+     * then reach the end of the loop and overwrite the Error state the
+     * Disconnected handler had already set with a false "Completed",
+     * reporting success for a transfer that actually died halfway through.
+     */
+    @Volatile private var connectionLost = false
+
+    /**
      * The module map built in [TransferViewModel.attachTransportAndStart] is
      * captured right after the transport connects — for the sender, that's
      * *before* CategorySelectionScreen/AppPickerScreen, where SAF folder URIs
@@ -93,6 +105,7 @@ class TransferManager(
                 transport.sendMessage(ProtocolMessage.Hello(sessionId, deviceName, appVersion = "0.1.0"))
                 transport.sendMessage(ProtocolMessage.Manifest(sessionId, categories))
                 for (category in categories) {
+                    if (connectionLost) break
                     val module = modules[category]
                     if (module == null) {
                         transport.sendMessage(ProtocolMessage.Error(category, "No module registered for $category"))
@@ -112,9 +125,17 @@ class TransferManager(
                     emitRunning()
                     transport.sendMessage(ProtocolMessage.CategoryDone(category, itemsSent = 0))
                 }
+                if (connectionLost) {
+                    error("Соединение потеряно во время переноса")
+                }
                 transport.sendMessage(ProtocolMessage.TransferDone(sessionId))
                 _state.value = TransferState.Completed(snapshotCategories())
-            }.onFailure { e -> _state.value = TransferState.Error(e.message ?: "Transfer failed") }
+            }.onFailure { e ->
+                // A disconnect already put a more specific message in _state
+                // via the Disconnected handler in startListening() — don't
+                // clobber it with the generic "Соединение потеряно" above.
+                if (!connectionLost) _state.value = TransferState.Error(e.message ?: "Transfer failed")
+            }
         }
     }
 
@@ -133,7 +154,10 @@ class TransferManager(
                         peerName = event.peerName
                         emitRunning()
                     }
-                    is TransportEvent.Disconnected -> _state.value = TransferState.Error(event.reason)
+                    is TransportEvent.Disconnected -> {
+                        connectionLost = true
+                        _state.value = TransferState.Error(event.reason)
+                    }
                     is TransportEvent.TransportError -> _state.value = TransferState.Error(event.message)
                     is TransportEvent.Progress -> {
                         onProgress(event.itemId, event.bytesTransferred, event.totalBytes)
