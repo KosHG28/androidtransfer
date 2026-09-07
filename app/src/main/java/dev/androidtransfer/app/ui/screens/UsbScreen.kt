@@ -70,11 +70,11 @@ fun UsbScreen(viewModel: TransferViewModel, onConnected: () -> Unit) {
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Подключение по USB", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "1. Соедините телефоны USB-C кабелем.\n" +
-                    "2. На ОДНОМ из телефонов включите «USB-модем» (Настройки → Сеть → Точка доступа и модем → USB-модем).\n" +
-                    "3. На ЭТОМ телефоне (где включили модем) нажмите «Ждать подключение».\n" +
-                    "4. На ВТОРОМ телефоне откройте этот же экран, посмотрите его IP ниже и введите в поле, затем нажмите «Подключиться».",
-                style = MaterialTheme.typography.bodyMedium,
+                "1. Соедините телефоны кабелем.\n" +
+                    "2. На одном включите USB-модем: Настройки → Точка доступа и модем.\n" +
+                    "3. На нём же — «Ждать подключение».\n" +
+                    "4. На втором введите IP первого (виден ниже) и «Подключиться».",
+                style = MaterialTheme.typography.bodySmall,
             )
 
             Text("IP этого телефона на USB-интерфейсе:", style = MaterialTheme.typography.bodySmall)

@@ -149,7 +149,7 @@ fun WifiScreen(viewModel: TransferViewModel, onConnected: () -> Unit) {
             }
 
             Text(
-                "Убедитесь, что на обоих телефонах включены Wi-Fi и Bluetooth (сами по себе, не обязательно подключение к одной сети).",
+                "Включите Wi-Fi и Bluetooth на обоих телефонах. Подключаться к сети не нужно.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray,
             )

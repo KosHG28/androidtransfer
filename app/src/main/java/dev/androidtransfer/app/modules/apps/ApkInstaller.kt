@@ -56,6 +56,24 @@ object ApkInstaller {
         pump(context.applicationContext)
     }
 
+    /**
+     * Clears everything left over from a previous transfer. This object is a
+     * singleton living as long as the process, so without an explicit reset
+     * the next phone's progress screen opens showing the previous one's
+     * "Установлено: 47" — which matters here, because the app is run back to
+     * back on one device after another rather than once in a lifetime. Also
+     * drops APKs kept for a retry nobody is going to ask for now.
+     */
+    @Synchronized
+    fun reset() {
+        queue.clear()
+        inFlight.clear()
+        failedInstalls.forEach { install -> install.parts.forEach { runCatching { it.delete() } } }
+        failedInstalls.clear()
+        installing = false
+        _stats.value = InstallStats()
+    }
+
     @Synchronized
     fun retryFailed(context: Context) {
         queue.addAll(failedInstalls)

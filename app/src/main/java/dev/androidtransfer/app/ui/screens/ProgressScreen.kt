@@ -152,13 +152,21 @@ private fun RunningContent(state: TransferState.Running) {
             }
             Text(
                 if (byteFraction != null) {
-                    "${Format.megabytes(state.bytesTransferred)} из ${Format.megabytes(state.totalBytesExpected)} " +
+                    "${Format.size(state.bytesTransferred)} из ${Format.size(state.totalBytesExpected)} " +
                         "· $done из $total категорий"
                 } else {
                     "$done из $total категорий"
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
+            // The one number the operator repeats to the customer.
+            Format.remaining(state.totalBytesExpected - state.bytesTransferred, state.speedBytesPerSecond)?.let {
+                Text(
+                    "Осталось $it",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             LinearProgressIndicator(
                 progress = { byteFraction ?: (done.toFloat() / total) },
                 modifier = Modifier.fillMaxWidth(),
@@ -174,7 +182,7 @@ private fun RunningContent(state: TransferState.Running) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    "${Format.megabytes(state.currentFileBytesTransferred)} / ${Format.megabytes(state.currentFileTotalBytes)}",
+                    "${Format.size(state.currentFileBytesTransferred)} / ${Format.size(state.currentFileTotalBytes)}",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 val speedText = Format.speed(state.speedBytesPerSecond)

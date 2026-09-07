@@ -7,11 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -35,15 +32,14 @@ fun HomeScreen(onRoleChosen: (Role) -> Unit, onOpenHistory: () -> Unit) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Filled.PhoneAndroid, contentDescription = null, modifier = Modifier.size(40.dp))
-                Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Icon(Icons.Filled.PhoneAndroid, contentDescription = null, modifier = Modifier.size(40.dp))
-            }
-            Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 16.dp))
-            Text(stringResource(R.string.home_subtitle), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineMedium)
+            Text(
+                stringResource(R.string.home_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
 
-            Column(modifier = Modifier.padding(top = 32.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(modifier = Modifier.padding(top = 24.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 RoleCard(
                     icon = Icons.Filled.Upload,
                     label = stringResource(R.string.home_role_send),

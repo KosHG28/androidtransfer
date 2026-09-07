@@ -11,10 +11,10 @@
     <string name="home_role_receive">Это новый телефон (принять)</string>
 
     <string name="transport_title">Способ соединения</string>
-    <string name="transport_wifi">По Wi-Fi (без интернета)</string>
-    <string name="transport_wifi_desc">Прямое соединение между телефонами через Nearby Connections. Быстро для больших объёмов.</string>
-    <string name="transport_usb">По кабелю (USB)</string>
-    <string name="transport_usb_desc">Требуется включить USB-модем на одном из телефонов. Самый быстрый и стабильный способ.</string>
+    <string name="transport_wifi">Wi-Fi</string>
+    <string name="transport_wifi_desc">Прямое соединение. Сеть и интернет не нужны.</string>
+    <string name="transport_usb">Кабель USB</string>
+    <string name="transport_usb_desc">Быстрее и стабильнее. Нужен USB-модем на одном телефоне.</string>
 
     <string name="category_contacts">Контакты</string>
     <string name="category_call_log">Журнал звонков</string>

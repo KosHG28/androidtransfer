@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import dev.androidtransfer.app.core.transfer.Format
 import dev.androidtransfer.app.core.transfer.Permissions
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.modules.appdata.WhatsAppModule
@@ -71,7 +72,12 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
     LaunchedEffect(Unit) {
         val perms = Permissions.forSelection(viewModel.selectedCategories.toList())
         if (perms.isNotEmpty()) permissionLauncher.launch(perms.toTypedArray())
+        viewModel.loadCategorySizes()
     }
+
+    // Sizes come from MediaStore, which returns nothing until the permission
+    // is actually granted — so measure again once the dialog is answered.
+    LaunchedEffect(denied) { viewModel.loadCategorySizes() }
 
     val filesPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         uri?.let {
@@ -132,7 +138,7 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
                     val info = categoryUiInfo(category)
                     val checked = category in viewModel.selectedCategories
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Icon(info.icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Icon(info.icon, contentDescription = null, modifier = Modifier.size(20.dp))
                         Checkbox(
                             checked = checked,
                             onCheckedChange = { enabled ->
@@ -143,7 +149,21 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
                                 }
                             },
                         )
-                        Text(stringResource(info.labelRes), modifier = Modifier.weight(1f))
+                        Text(
+                            stringResource(info.labelRes),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        // Only the categories that can be measured cheaply have
+                        // a size; the rest simply show nothing rather than a
+                        // meaningless "0 МБ".
+                        viewModel.categorySizes[category]?.let { bytes ->
+                            Text(
+                                Format.size(bytes),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                            )
+                        }
                     }
                     when (category) {
                         TransferCategory.FILES -> if (checked) {
@@ -220,7 +240,10 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             ) {
-                Text("Начать перенос")
+                // The total goes on the button itself: it's the last thing the
+                // operator looks at before committing to a wait.
+                val total = viewModel.selectedSizeBytes()
+                Text(if (total > 0) "Начать перенос · ${Format.size(total)}" else "Начать перенос")
             }
         }
     }

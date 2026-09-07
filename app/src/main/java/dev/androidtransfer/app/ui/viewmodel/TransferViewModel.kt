@@ -5,8 +5,10 @@ import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.androidtransfer.app.core.transfer.TransferCategory
@@ -17,7 +19,9 @@ import dev.androidtransfer.app.core.transfer.TransferState
 import dev.androidtransfer.app.core.transport.NearbyTransport
 import dev.androidtransfer.app.core.transport.P2pTransport
 import dev.androidtransfer.app.core.transport.UsbTetherTransport
+import dev.androidtransfer.app.modules.apps.ApkInstaller
 import dev.androidtransfer.app.modules.apps.AppsModule
+import dev.androidtransfer.app.modules.apps.ReceivedAppsHolder
 import dev.androidtransfer.app.modules.appdata.WhatsAppModule
 import dev.androidtransfer.app.modules.calendar.CalendarModule
 import dev.androidtransfer.app.modules.calllog.CallLogModule
@@ -28,10 +32,12 @@ import dev.androidtransfer.app.modules.files.FilesModule
 import dev.androidtransfer.app.modules.media.AudioModule
 import dev.androidtransfer.app.modules.media.MediaModule
 import dev.androidtransfer.app.modules.wallpaper.WallpaperModule
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 enum class Role { SENDER, RECEIVER }
@@ -93,6 +99,55 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
         if (!enabled) selectedCategories.remove(category)
     }
 
+    /**
+     * How much each category holds, filled in as the measurements come back.
+     * Knowing "Фото и видео — 12,4 ГБ" *before* starting is the difference
+     * between telling a customer "минут сорок" and finding out the hard way;
+     * only the categories that can be measured cheaply ever appear here.
+     */
+    val categorySizes: SnapshotStateMap<TransferCategory, Long> = mutableStateMapOf()
+
+    fun loadCategorySizes() {
+        if (sizesJob?.isActive == true) return
+        sizesJob = viewModelScope.launch {
+            val modules = buildModules()
+            for ((category, module) in modules) {
+                // One at a time, publishing as we go: the screen fills in
+                // progressively instead of blocking on the slowest scan.
+                val bytes = withContext(Dispatchers.IO) {
+                    runCatching { module.estimate(getApplication<Application>()) }.getOrNull()?.bytes
+                }
+                if (bytes != null && bytes > 0) categorySizes[category] = bytes
+            }
+        }
+    }
+
+    private var sizesJob: Job? = null
+
+    /** Total of what's currently ticked, for the categories whose size is known. */
+    fun selectedSizeBytes(): Long = selectedCategories.sumOf { categorySizes[it] ?: 0L }
+
+    /**
+     * Wipes everything customer-specific so the next phone starts clean.
+     * Category choices and folder grants are deliberately kept — in a service
+     * centre the same set gets transferred all day, and re-ticking it every
+     * time would be the single most annoying thing about the app.
+     */
+    fun resetForNextTransfer() {
+        role = null
+        transportKind = null
+        activeManager = null
+        stateCollectJob?.cancel()
+        stateCollectJob = null
+        transportOwnedByService = false
+        nearbyTransport = null
+        usbTransport = null
+        _transferState.value = TransferState.Idle
+        categorySizes.clear()
+        ApkInstaller.reset()
+        ReceivedAppsHolder.set(emptyList())
+    }
+
     private fun buildModules(): Map<TransferCategory, TransferModule> = mapOf(
         TransferCategory.CONTACTS to ContactsModule(),
         TransferCategory.CALL_LOG to CallLogModule(),
@@ -124,6 +179,11 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
      * that teardown no longer touches it.
      */
     fun attachTransportAndStart(transport: P2pTransport) {
+        // These two are process-lifetime singletons. Left alone, the next
+        // phone's screens open showing the previous phone's install counts
+        // and app list.
+        ApkInstaller.reset()
+        ReceivedAppsHolder.set(emptyList())
         _transferState.value = TransferState.Idle
         val app = getApplication<Application>()
         val handedOff = TransferForegroundService.withService(app) { service ->
