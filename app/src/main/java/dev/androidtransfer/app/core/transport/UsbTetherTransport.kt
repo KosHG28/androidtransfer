@@ -89,6 +89,11 @@ class UsbTetherTransport(context: Context) : P2pTransport {
     private var output: DataOutputStream? = null
 
     suspend fun connect(role: Role) = withContext(Dispatchers.IO) {
+        // A retry after a failed/aborted attempt (e.g. tapping "Ждать
+        // подключение" twice) would otherwise try to bind a second
+        // ServerSocket on the same port while the first is still open,
+        // throwing BindException: Address already in use.
+        closeExisting()
         try {
             val active = when (role) {
                 is Role.Server -> {
@@ -210,9 +215,16 @@ class UsbTetherTransport(context: Context) : P2pTransport {
         }
     }
 
-    override fun close() {
+    private fun closeExisting() {
         runCatching { socket?.close() }
         runCatching { serverSocket?.close() }
+        socket = null
+        serverSocket = null
+        output = null
+    }
+
+    override fun close() {
+        closeExisting()
     }
 }
 

@@ -45,7 +45,7 @@ sealed interface TransferState {
 class TransferManager(
     private val context: Context,
     private val transport: P2pTransport,
-    private val modules: Map<TransferCategory, TransferModule>,
+    private var modules: Map<TransferCategory, TransferModule>,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -67,6 +67,20 @@ class TransferManager(
     private var lastSampleTimeMs = 0L
     private var lastSampleBytes = 0L
     private var speedBytesPerSecond = 0.0
+
+    /**
+     * The module map built in [TransferViewModel.attachTransportAndStart] is
+     * captured right after the transport connects — for the sender, that's
+     * *before* CategorySelectionScreen/AppPickerScreen, where SAF folder URIs
+     * and the app selection are actually chosen. Without a way to refresh it,
+     * FilesModule/CustomFolderModule/WhatsAppModule always saw a null tree URI
+     * (so export() no-ops) and AppsModule always saw "send everything",
+     * silently ignoring whatever the user picked. Call this right before
+     * [startSending] with a freshly built map so it reflects the real choices.
+     */
+    fun updateModules(newModules: Map<TransferCategory, TransferModule>) {
+        modules = newModules
+    }
 
     fun startSending(sessionId: String, categories: List<TransferCategory>, deviceName: String) {
         categoryOrder.clear()

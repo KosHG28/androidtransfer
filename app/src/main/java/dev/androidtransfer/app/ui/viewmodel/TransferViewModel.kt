@@ -107,6 +107,10 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun beginSending(deviceName: String) {
+        // Rebuild with whatever the user actually chose on CategorySelectionScreen/
+        // AppPickerScreen — the map built in attachTransportAndStart is stale (it
+        // was captured right after connecting, before those screens ran).
+        transferManager?.updateModules(buildModules())
         transferManager?.startSending(UUID.randomUUID().toString(), orderedSelection(), deviceName)
     }
 
