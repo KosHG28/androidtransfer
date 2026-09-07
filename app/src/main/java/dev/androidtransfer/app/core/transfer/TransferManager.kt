@@ -61,6 +61,7 @@ class TransferManager(
     private val categoryStatus = mutableMapOf<TransferCategory, CategoryStatus>()
     private val categoryDetail = mutableMapOf<TransferCategory, String>()
     private val categoryFileCount = mutableMapOf<TransferCategory, Int>()
+    private val categoryFailedFiles = mutableMapOf<TransferCategory, Int>()
     private var peerName: String? = null
 
     // Cumulative-bytes + smoothed-speed tracking across the whole session, not just the current file.
@@ -169,6 +170,10 @@ class TransferManager(
                         finishSession(TransferState.Error(event.reason))
                     }
                     is TransportEvent.TransportError -> finishSession(TransferState.Error(event.message))
+                    is TransportEvent.FileFailed -> {
+                        event.category?.let { noteFileFailure(it, event.reason ?: "файл не передан", event.displayName) }
+                        emitRunningUnlessFinished()
+                    }
                     is TransportEvent.Progress -> {
                         onProgress(event.itemId, event.bytesTransferred, event.totalBytes)
                         emitRunningUnlessFinished()
@@ -201,9 +206,13 @@ class TransferManager(
                 emitRunning()
             }
             is ProtocolMessage.CategoryDone -> {
-                if (categoryStatus[message.category] != CategoryStatus.FAILED) {
-                    categoryStatus[message.category] = CategoryStatus.DONE
-                }
+                // handleFile resets a category to RUNNING for every incoming
+                // file, so an earlier per-file failure would be erased by a
+                // later success and the category would end up reported as
+                // fully done. Settle it against the failure tally instead.
+                val hadFailure = categoryStatus[message.category] == CategoryStatus.FAILED ||
+                    (categoryFailedFiles[message.category] ?: 0) > 0
+                categoryStatus[message.category] = if (hadFailure) CategoryStatus.FAILED else CategoryStatus.DONE
                 emitRunning()
             }
             is ProtocolMessage.TransferDone -> finishSession(TransferState.Completed(snapshotCategories()))
@@ -245,14 +254,30 @@ class TransferManager(
             .onSuccess {
                 val count = (categoryFileCount[header.category] ?: 0) + 1
                 categoryFileCount[header.category] = count
-                categoryDetail[header.category] = "$count файл(ов)"
+                val failed = categoryFailedFiles[header.category] ?: 0
+                categoryDetail[header.category] =
+                    "$count файл(ов)" + if (failed > 0) ", не передано: $failed" else ""
             }
-            .onFailure { e ->
-                categoryStatus[header.category] = CategoryStatus.FAILED
-                categoryDetail[header.category] = e.message ?: e.javaClass.simpleName
-            }
+            .onFailure { e -> noteFileFailure(header.category, e.message ?: e.javaClass.simpleName, header.displayName) }
         file.delete()
         emitRunning()
+    }
+
+    /**
+     * One file of a category failed. Counted rather than just flagged: the
+     * count is what [ProtocolMessage.CategoryDone] consults to decide the
+     * category's final status, and it's the difference between "полностью
+     * перенесено" and "перенесено, кроме трёх файлов" in the UI.
+     */
+    private fun noteFileFailure(category: TransferCategory, reason: String, displayName: String?) {
+        val failed = (categoryFailedFiles[category] ?: 0) + 1
+        categoryFailedFiles[category] = failed
+        categoryStatus[category] = CategoryStatus.FAILED
+        categoryDetail[category] = buildString {
+            displayName?.let { append("«").append(it).append("»: ") }
+            append(reason)
+            if (failed > 1) append(" (не передано файлов: $failed)")
+        }
     }
 
     private fun onProgress(itemId: String, bytesTransferred: Long, totalBytes: Long) {

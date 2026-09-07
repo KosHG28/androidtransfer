@@ -1,6 +1,7 @@
 package dev.androidtransfer.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -38,7 +39,17 @@ fun AppNav() {
     val navController: NavHostController = rememberNavController()
     val viewModel: TransferViewModel = viewModel()
 
-    NavHost(navController = navController, startDestination = Routes.HOME) {
+    // Reopened while the service is still driving a transfer — i.e. the user
+    // swiped the app away mid-transfer (which the transfer now survives) and
+    // came back. Re-attach and open straight on the progress screen, instead
+    // of a home screen that hides the fact a transfer is still running and
+    // invites starting a second one on top of it.
+    val resumedRunningTransfer = remember { viewModel.adoptRunningSessionIfAny() }
+
+    NavHost(
+        navController = navController,
+        startDestination = if (resumedRunningTransfer) Routes.PROGRESS else Routes.HOME,
+    ) {
         composable(Routes.HOME) {
             HomeScreen(
                 onRoleChosen = { role ->
@@ -80,7 +91,16 @@ fun AppNav() {
             SummaryScreen(
                 viewModel,
                 onOpenApps = { navController.navigate(Routes.APPS) },
-                onFinish = { navController.popBackStack(Routes.HOME, inclusive = false) },
+                onFinish = {
+                    // When the app opened straight into a resumed transfer,
+                    // HOME was never on the back stack — popping to it would
+                    // silently do nothing and strand the user on the summary.
+                    if (!navController.popBackStack(Routes.HOME, inclusive = false)) {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                        }
+                    }
+                },
             )
         }
         composable(Routes.HISTORY) {

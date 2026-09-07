@@ -119,15 +119,46 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
      * that teardown no longer touches it.
      */
     fun attachTransportAndStart(transport: P2pTransport) {
-        transportOwnedByService = true
         _transferState.value = TransferState.Idle
         val app = getApplication<Application>()
-        TransferForegroundService.withService(app) { service ->
+        val handedOff = TransferForegroundService.withService(app) { service ->
             val manager = service.attach(app, transport, buildModules())
             activeManager = manager
             stateCollectJob?.cancel()
             stateCollectJob = viewModelScope.launch { service.state.collect { _transferState.value = it } }
         }
+        transportOwnedByService = handedOff
+        if (!handedOff) {
+            // The system refused to start the service at all. Run the
+            // transfer in-process rather than leaving the user on
+            // "Подготовка…" forever waiting for a handoff that will never
+            // happen — it just won't survive the app being swiped away.
+            val manager = TransferManager(app, transport, buildModules())
+            activeManager = manager
+            stateCollectJob?.cancel()
+            stateCollectJob = viewModelScope.launch { manager.state.collect { _transferState.value = it } }
+            manager.startListening()
+        }
+    }
+
+    /**
+     * Re-attaches the UI to a transfer the service is still running — the
+     * case where the user swiped the app away mid-transfer (which the
+     * service now survives) and then reopened it. Without this the fresh
+     * ViewModel would show a blank Idle home screen while a transfer is
+     * still going in the background, and the user could even kick off a
+     * second one on top of it.
+     *
+     * @return true if there was a live session to adopt.
+     */
+    fun adoptRunningSessionIfAny(): Boolean {
+        val service = TransferForegroundService.runningSession() ?: return false
+        val manager = service.activeManager() ?: return false
+        activeManager = manager
+        transportOwnedByService = true
+        stateCollectJob?.cancel()
+        stateCollectJob = viewModelScope.launch { service.state.collect { _transferState.value = it } }
+        return true
     }
 
     fun beginSending(deviceName: String) {

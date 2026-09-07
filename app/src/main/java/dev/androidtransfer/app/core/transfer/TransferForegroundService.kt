@@ -17,6 +17,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -44,6 +46,7 @@ class TransferForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stateJob: Job? = null
+    private var shutdownJob: Job? = null
 
     private var transport: P2pTransport? = null
     private var manager: TransferManager? = null
@@ -72,6 +75,10 @@ class TransferForegroundService : Service() {
      * it isn't leaked.
      */
     fun attach(context: Context, newTransport: P2pTransport, modules: Map<TransferCategory, TransferModule>): TransferManager {
+        // A shutdown still pending from a previous session must not tear down
+        // the one being started now.
+        shutdownJob?.cancel()
+        shutdownJob = null
         if (transport !== newTransport) releaseTransport()
         transport = newTransport
         val newManager = TransferManager(context.applicationContext, newTransport, modules)
@@ -80,18 +87,32 @@ class TransferForegroundService : Service() {
         stateJob = serviceScope.launch {
             newManager.state.collect { s ->
                 _state.value = s
-                if (s is TransferState.Completed || s is TransferState.Error) {
-                    // Session over — nothing left here to protect. Stop so a
-                    // stale foreground notification doesn't linger, and free
-                    // the transport/socket.
-                    releaseTransport()
-                    stopSelf()
-                }
+                if (s is TransferState.Completed || s is TransferState.Error) scheduleShutdown()
             }
         }
         newManager.startListening()
         return newManager
     }
+
+    /**
+     * Session over — free the transport and stop, but not instantly. On
+     * Nearby, sendPayload().await() resolves once the payload is handed to
+     * Play Services, not once the peer has it: closing the link the moment
+     * the sender marks itself Completed can drop the very TransferDone the
+     * receiver is waiting on, leaving it stuck on the progress screen
+     * forever. The linger gives the last messages time to flush.
+     */
+    private fun scheduleShutdown() {
+        if (shutdownJob != null) return
+        shutdownJob = serviceScope.launch {
+            delay(TERMINAL_LINGER_MS)
+            releaseTransport()
+            stopSelf()
+        }
+    }
+
+    /** The manager driving the current session, so a UI recreated after a task swipe can re-attach to it instead of starting over. */
+    fun activeManager(): TransferManager? = manager
 
     fun updateModules(modules: Map<TransferCategory, TransferModule>) {
         manager?.updateModules(modules)
@@ -112,6 +133,7 @@ class TransferForegroundService : Service() {
     override fun onDestroy() {
         if (instance === this) instance = null
         releaseTransport()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -132,18 +154,22 @@ class TransferForegroundService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 42
 
+        /** How long the link stays open after a session ends, so trailing messages can flush. See [scheduleShutdown]. */
+        private const val TERMINAL_LINGER_MS = 4_000L
+
         @Volatile private var instance: TransferForegroundService? = null
         @Volatile private var pendingAction: ((TransferForegroundService) -> Unit)? = null
 
-        fun start(context: Context) {
+        /** @return false if the system refused to start the service (e.g. the Android 12+ background-start restriction). */
+        fun start(context: Context): Boolean {
             val intent = Intent(context, TransferForegroundService::class.java)
-            runCatching {
+            return runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
                 } else {
                     context.startService(intent)
                 }
-            }
+            }.isSuccess
         }
 
         fun stop(context: Context) {
@@ -156,15 +182,28 @@ class TransferForegroundService : Service() {
          * — right after calling it, onCreate() may not have run yet — so if
          * the instance isn't up yet, [action] is queued and replayed the
          * moment it is.
+         *
+         * @return false if the service could not be started at all, in which
+         * case [action] was NOT run and never will be. The caller must fall
+         * back rather than wait: a queued action nobody replays means a
+         * transfer that silently never starts, with the UI stuck on
+         * "Подготовка…" forever.
          */
-        fun withService(context: Context, action: (TransferForegroundService) -> Unit) {
-            start(context)
+        fun withService(context: Context, action: (TransferForegroundService) -> Unit): Boolean {
             val current = instance
             if (current != null) {
+                // Already running: still (re)start it so a stopSelf() from a
+                // previous finished session can't tear it down underneath us.
+                start(context)
                 action(current)
-            } else {
-                pendingAction = action
+                return true
             }
+            if (!start(context)) return false
+            pendingAction = action
+            return true
         }
+
+        /** The service instance only if it's actually driving a transfer right now. */
+        fun runningSession(): TransferForegroundService? = instance?.takeIf { it.manager != null }
     }
 }

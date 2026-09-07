@@ -108,10 +108,17 @@ class NearbyTransport(
                 tryCompleteFile(update.payloadId)
                 releaseStagedOutgoing(update.payloadId)
             } else if (update.status == PayloadTransferUpdate.Status.FAILURE) {
+                // Read the header before the removals below drop it — it's what
+                // tells the UI *which* category lost a file.
+                val header = pendingFileHeaders[update.payloadId]
                 pendingFileHeaders.remove(update.payloadId)
                 pendingFilePayloads.remove(update.payloadId)
                 releaseStagedOutgoing(update.payloadId)
-                scope.launch { _events.emit(TransportEvent.TransportError("File transfer failed")) }
+                scope.launch {
+                    _events.emit(
+                        TransportEvent.FileFailed(header?.category, header?.displayName, "Nearby не смог передать файл"),
+                    )
+                }
             }
         }
     }
@@ -155,7 +162,13 @@ class NearbyTransport(
                 _events.emit(TransportEvent.FileReceived(header, privateCopy))
             } else {
                 privateCopy.delete()
-                _events.emit(TransportEvent.TransportError("Не удалось прочитать принятый файл: ${copied.exceptionOrNull()?.message}"))
+                _events.emit(
+                    TransportEvent.FileFailed(
+                        header.category,
+                        header.displayName,
+                        "не удалось прочитать принятый файл: ${copied.exceptionOrNull()?.message}",
+                    ),
+                )
             }
         }
     }

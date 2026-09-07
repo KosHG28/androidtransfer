@@ -1,6 +1,7 @@
 package dev.androidtransfer.app.core.transport
 
 import dev.androidtransfer.app.core.transfer.ProtocolMessage
+import dev.androidtransfer.app.core.transfer.TransferCategory
 import kotlinx.coroutines.flow.SharedFlow
 import java.io.File
 import java.io.InputStream
@@ -36,5 +37,15 @@ sealed interface TransportEvent {
     data class MessageReceived(val message: ProtocolMessage) : TransportEvent
     data class FileReceived(val header: ProtocolMessage.FileHeader, val file: File) : TransportEvent
     data class Progress(val itemId: String, val bytesTransferred: Long, val totalBytes: Long) : TransportEvent
+
+    /**
+     * One file failed while the connection itself is still fine. Deliberately
+     * NOT a [TransportError]: that one ends the whole session, and a single
+     * unreadable photo must not tear down a transfer with hundreds of files
+     * still to move. The category is marked failed, the session continues.
+     */
+    data class FileFailed(val category: TransferCategory?, val displayName: String?, val reason: String?) : TransportEvent
+
+    /** Fatal for the session — the link itself is unusable from here on. */
     data class TransportError(val message: String) : TransportEvent
 }
