@@ -8,9 +8,12 @@ import dev.androidtransfer.app.core.transport.P2pTransport
 import dev.androidtransfer.app.core.transport.TransportEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -96,7 +99,7 @@ class TransferManager(
     /** Set at the top of [startSending] — distinguishes the two terminal-state call sites below for history recording, since Disconnected/TransportError can happen on either side. */
     private var startedAsSender = false
 
-    private var sendJob: kotlinx.coroutines.Job? = null
+    private var sendJob: Job? = null
 
     // Stall detection. A link can stop moving data without ever reporting a
     // disconnect — the peer walks out of range, Play Services wedges, the
@@ -261,8 +264,8 @@ class TransferManager(
      */
     private fun startStallWatchdog() {
         scope.launch {
-            while (kotlinx.coroutines.isActive) {
-                kotlinx.coroutines.delay(STALL_CHECK_INTERVAL_MS)
+            while (isActive) {
+                delay(STALL_CHECK_INTERVAL_MS)
                 if (!transferStarted) continue
                 if (_state.value !is TransferState.Running) continue
                 val idleFor = System.currentTimeMillis() - lastActivityMs
