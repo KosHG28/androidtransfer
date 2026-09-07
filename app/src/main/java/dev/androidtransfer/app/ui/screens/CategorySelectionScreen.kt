@@ -37,6 +37,7 @@ import androidx.core.content.ContextCompat
 import dev.androidtransfer.app.core.transfer.Permissions
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.modules.appdata.WhatsAppModule
+import dev.androidtransfer.app.modules.files.DownloadsModule
 import dev.androidtransfer.app.ui.viewmodel.TransferViewModel
 
 private val allCategories: List<TransferCategory> = categoryUiInfoList.map { it.category }
@@ -45,6 +46,8 @@ private val groups: List<Pair<String, List<TransferCategory>>> = listOf(
     "Личные данные" to listOf(TransferCategory.CONTACTS, TransferCategory.CALL_LOG, TransferCategory.CALENDAR),
     "Медиа и файлы" to listOf(
         TransferCategory.MEDIA,
+        TransferCategory.AUDIO,
+        TransferCategory.DOWNLOADS,
         TransferCategory.FILES,
         TransferCategory.WHATSAPP_MEDIA,
         TransferCategory.CUSTOM_FOLDER,
@@ -86,6 +89,12 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
         uri?.let {
             context.contentResolver.takePersistableUriPermission(it, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             viewModel.whatsappTreeUri = it
+        }
+    }
+    val downloadsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        uri?.let {
+            context.contentResolver.takePersistableUriPermission(it, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            viewModel.downloadsTreeUri = it
         }
     }
 
@@ -145,6 +154,17 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
                         TransferCategory.CUSTOM_FOLDER -> if (checked) {
                             OutlinedButton(onClick = { customPicker.launch(null) }, modifier = Modifier.padding(start = 48.dp)) {
                                 Text(if (viewModel.customFolderTreeUri != null) "Папка выбрана" else "Выбрать папку")
+                            }
+                        }
+                        TransferCategory.DOWNLOADS -> if (checked) {
+                            OutlinedButton(
+                                onClick = {
+                                    val hint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) DownloadsModule.initialUriHint() else null
+                                    downloadsPicker.launch(hint)
+                                },
+                                modifier = Modifier.padding(start = 48.dp),
+                            ) {
+                                Text(if (viewModel.downloadsTreeUri != null) "Папка выбрана" else "Выбрать папку Download")
                             }
                         }
                         TransferCategory.WHATSAPP_MEDIA -> if (checked) {

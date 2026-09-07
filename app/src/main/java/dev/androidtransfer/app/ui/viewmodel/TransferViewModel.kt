@@ -23,7 +23,9 @@ import dev.androidtransfer.app.modules.calendar.CalendarModule
 import dev.androidtransfer.app.modules.calllog.CallLogModule
 import dev.androidtransfer.app.modules.contacts.ContactsModule
 import dev.androidtransfer.app.modules.files.CustomFolderModule
+import dev.androidtransfer.app.modules.files.DownloadsModule
 import dev.androidtransfer.app.modules.files.FilesModule
+import dev.androidtransfer.app.modules.media.AudioModule
 import dev.androidtransfer.app.modules.media.MediaModule
 import dev.androidtransfer.app.modules.wallpaper.WallpaperModule
 import kotlinx.coroutines.Job
@@ -52,6 +54,7 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
     var filesTreeUri by mutableStateOf<Uri?>(null)
     var customFolderTreeUri by mutableStateOf<Uri?>(null)
     var whatsappTreeUri by mutableStateOf<Uri?>(null)
+    var downloadsTreeUri by mutableStateOf<Uri?>(null)
 
     /** Which apps' APKs to send. Empty until the picker has been opened at least once. */
     val selectedAppPackages: SnapshotStateList<String> = mutableStateListOf()
@@ -95,6 +98,8 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
         TransferCategory.CALL_LOG to CallLogModule(),
         TransferCategory.CALENDAR to CalendarModule(),
         TransferCategory.MEDIA to MediaModule(),
+        TransferCategory.AUDIO to AudioModule(),
+        TransferCategory.DOWNLOADS to DownloadsModule(downloadsTreeUri),
         TransferCategory.FILES to FilesModule(filesTreeUri),
         TransferCategory.INSTALLED_APPS to AppsModule(
             selectedPackages = if (appSelectionInitialized) selectedAppPackages.toSet() else null,
@@ -187,6 +192,8 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
             TransferCategory.CALENDAR,
             TransferCategory.WALLPAPER,
             TransferCategory.MEDIA,
+            TransferCategory.AUDIO,
+            TransferCategory.DOWNLOADS,
             TransferCategory.FILES,
             TransferCategory.WHATSAPP_MEDIA,
             TransferCategory.CUSTOM_FOLDER,

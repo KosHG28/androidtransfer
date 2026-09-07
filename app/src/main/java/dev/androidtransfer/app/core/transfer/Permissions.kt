@@ -14,7 +14,14 @@ object Permissions {
         } else {
             listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
-        TransferCategory.FILES, TransferCategory.CUSTOM_FOLDER, TransferCategory.WHATSAPP_MEDIA -> emptyList() // granted via SAF folder picker instead
+        TransferCategory.AUDIO -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        TransferCategory.FILES, TransferCategory.CUSTOM_FOLDER, TransferCategory.WHATSAPP_MEDIA,
+        TransferCategory.DOWNLOADS,
+        -> emptyList() // granted via SAF folder picker instead
         TransferCategory.INSTALLED_APPS -> emptyList()
         TransferCategory.WALLPAPER -> emptyList() // SET_WALLPAPER is a normal (install-time) permission; reading has no permission to request, only an OS-version restriction
     }

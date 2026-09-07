@@ -13,6 +13,8 @@ enum class TransferCategory {
     CALL_LOG,
     CALENDAR,
     MEDIA,
+    AUDIO,
+    DOWNLOADS,
     FILES,
     INSTALLED_APPS,
     WALLPAPER,

@@ -8,7 +8,9 @@ import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.ui.graphics.vector.ImageVector
 import dev.androidtransfer.app.R
@@ -22,6 +24,8 @@ val categoryUiInfoList = listOf(
     CategoryUiInfo(TransferCategory.CALL_LOG, R.string.category_call_log, Icons.Filled.Call),
     CategoryUiInfo(TransferCategory.CALENDAR, R.string.category_calendar, Icons.Filled.Event),
     CategoryUiInfo(TransferCategory.MEDIA, R.string.category_media, Icons.Filled.Image),
+    CategoryUiInfo(TransferCategory.AUDIO, R.string.category_audio, Icons.Filled.MusicNote),
+    CategoryUiInfo(TransferCategory.DOWNLOADS, R.string.category_downloads, Icons.Filled.Download),
     CategoryUiInfo(TransferCategory.FILES, R.string.category_files, Icons.Filled.Folder),
     CategoryUiInfo(TransferCategory.INSTALLED_APPS, R.string.category_installed_apps, Icons.Filled.Apps),
     CategoryUiInfo(TransferCategory.WHATSAPP_MEDIA, R.string.category_whatsapp_media, Icons.Filled.Chat),
