@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.provider.CalendarContract
+import dev.androidtransfer.app.core.transfer.ImportSummary
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.core.transfer.TransferModule
 import dev.androidtransfer.app.core.transfer.TransferSink
@@ -71,12 +72,42 @@ class CalendarModule : TransferModule {
         sink.sendRecords(Json.encodeToString(records), records.size)
     }
 
-    override suspend fun importRecords(context: Context, jsonArray: String) {
+    /**
+     * Same title at the same start time is the same event. Checked across
+     * every calendar on the device, not just the one we create: an event the
+     * user already gets from their Google account shouldn't be duplicated
+     * into a second local copy either.
+     */
+    private fun existingKeys(context: Context): Set<String> {
+        val keys = mutableSetOf<String>()
+        runCatching {
+            context.contentResolver.query(
+                CalendarContract.Events.CONTENT_URI,
+                arrayOf(CalendarContract.Events.TITLE, CalendarContract.Events.DTSTART),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    keys += "${cursor.getString(0).orEmpty()}|${cursor.getLong(1)}"
+                }
+            }
+        }
+        return keys
+    }
+
+    override suspend fun importRecords(context: Context, jsonArray: String): ImportSummary {
         val records = Json.decodeFromString<List<CalendarEventRecord>>(jsonArray)
-        if (records.isEmpty()) return
+        if (records.isEmpty()) return ImportSummary(0)
+
+        val existing = existingKeys(context)
+        val fresh = records.filterNot { "${it.title.orEmpty()}|${it.dtStart}" in existing }
+        val skipped = records.size - fresh.size
+        if (fresh.isEmpty()) return ImportSummary(0, skipped)
+
         val calendarId = ensureLocalCalendar(context)
         var inserted = 0
-        for (record in records) {
+        for (record in fresh) {
             val values = ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, calendarId)
                 put(CalendarContract.Events.TITLE, record.title)
@@ -97,10 +128,12 @@ class CalendarModule : TransferModule {
         }
         // Matches the same silent-drop failure mode already confirmed for
         // Contacts on this project: applyBatch/insert can report success on
-        // some OEM providers while writing nothing.
+        // some OEM providers while writing nothing. Only reachable when there
+        // was something new to write — the all-duplicates case returned above.
         if (inserted <= 0) {
             error("Провайдер календаря не принял ни одной записи")
         }
+        return ImportSummary(inserted, skipped)
     }
 
     private fun ensureLocalCalendar(context: Context): Long {

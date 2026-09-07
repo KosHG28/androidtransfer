@@ -62,6 +62,7 @@ class TransferManager(
     private val categoryDetail = mutableMapOf<TransferCategory, String>()
     private val categoryFileCount = mutableMapOf<TransferCategory, Int>()
     private val categoryFailedFiles = mutableMapOf<TransferCategory, Int>()
+    private val categorySkippedFiles = mutableMapOf<TransferCategory, Int>()
     private var peerName: String? = null
 
     // Cumulative-bytes + smoothed-speed tracking across the whole session, not just the current file.
@@ -198,7 +199,7 @@ class TransferManager(
                 emitRunning()
                 val result = runCatching { modules[message.category]?.importRecords(context, message.jsonArray) }
                 result
-                    .onSuccess { categoryDetail[message.category] = "${message.count} шт." }
+                    .onSuccess { categoryDetail[message.category] = recordDetail(it, message.count) }
                     .onFailure { e ->
                         categoryStatus[message.category] = CategoryStatus.FAILED
                         categoryDetail[message.category] = e.message ?: e.javaClass.simpleName
@@ -239,7 +240,7 @@ class TransferManager(
                 modules[header.category]?.importRecords(context, json)
             }
             outcome
-                .onSuccess { categoryDetail[header.category] = "${header.recordCount ?: 0} шт." }
+                .onSuccess { categoryDetail[header.category] = recordDetail(it, header.recordCount ?: 0) }
                 .onFailure { e ->
                     categoryStatus[header.category] = CategoryStatus.FAILED
                     categoryDetail[header.category] = e.message ?: e.javaClass.simpleName
@@ -251,16 +252,48 @@ class TransferManager(
 
         val result = runCatching { modules[header.category]?.importFile(context, header, file) }
         result
-            .onSuccess {
-                val count = (categoryFileCount[header.category] ?: 0) + 1
-                categoryFileCount[header.category] = count
-                val failed = categoryFailedFiles[header.category] ?: 0
-                categoryDetail[header.category] =
-                    "$count файл(ов)" + if (failed > 0) ", не передано: $failed" else ""
+            .onSuccess { outcome ->
+                if (outcome == ImportOutcome.SKIPPED_DUPLICATE) {
+                    categorySkippedFiles[header.category] = (categorySkippedFiles[header.category] ?: 0) + 1
+                } else {
+                    categoryFileCount[header.category] = (categoryFileCount[header.category] ?: 0) + 1
+                }
+                categoryDetail[header.category] = fileCountDetail(header.category)
             }
             .onFailure { e -> noteFileFailure(header.category, e.message ?: e.javaClass.simpleName, header.displayName) }
         file.delete()
         emitRunning()
+    }
+
+    /**
+     * What a record category actually did. [announced] is the sender's count,
+     * used only when a module reports nothing back (no summary at all) —
+     * otherwise the receiver's own tally is the honest number, since
+     * deduplication means "500 отправлено" and "500 записано" are no longer
+     * the same thing.
+     */
+    private fun recordDetail(summary: ImportSummary?, announced: Int): String {
+        if (summary == null) return "$announced шт."
+        return buildString {
+            append("${summary.imported} шт.")
+            if (summary.skipped > 0) append(", пропущено ${summary.skipped} (уже есть)")
+        }
+    }
+
+    /**
+     * "12 файл(ов), пропущено 340 (уже есть)" — the skipped tally has to be
+     * visible, otherwise deduplication looks exactly like data loss to
+     * someone re-running a transfer and seeing 12 files instead of 352.
+     */
+    private fun fileCountDetail(category: TransferCategory): String {
+        val imported = categoryFileCount[category] ?: 0
+        val skipped = categorySkippedFiles[category] ?: 0
+        val failed = categoryFailedFiles[category] ?: 0
+        return buildString {
+            append("$imported файл(ов)")
+            if (skipped > 0) append(", пропущено $skipped (уже есть)")
+            if (failed > 0) append(", не передано: $failed")
+        }
     }
 
     /**

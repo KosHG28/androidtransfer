@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import dev.androidtransfer.app.core.transfer.ImportOutcome
 import dev.androidtransfer.app.core.transfer.ProtocolMessage
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.core.transfer.TransferModule
@@ -55,11 +56,12 @@ class WallpaperModule : TransferModule {
         )
     }
 
-    override suspend fun importFile(context: Context, header: ProtocolMessage.FileHeader, file: File) {
+    override suspend fun importFile(context: Context, header: ProtocolMessage.FileHeader, file: File): ImportOutcome {
         // No runCatching here on purpose: TransferManager already wraps this
         // call and needs the exception to escape to know the import failed —
         // swallowing it here would report success regardless of what happened.
         file.inputStream().use { WallpaperManager.getInstance(context).setStream(it) }
+        return ImportOutcome.IMPORTED
     }
 
     private fun drawableToBitmap(drawable: Drawable): Bitmap {

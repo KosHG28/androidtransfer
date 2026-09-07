@@ -3,6 +3,7 @@ package dev.androidtransfer.app.modules.contacts
 import android.content.ContentProviderOperation
 import android.content.Context
 import android.provider.ContactsContract
+import dev.androidtransfer.app.core.transfer.ImportSummary
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.core.transfer.TransferModule
 import dev.androidtransfer.app.core.transfer.TransferSink
@@ -94,13 +95,73 @@ class ContactsModule : TransferModule {
         )?.use { it.count } ?: 0
     }.getOrDefault(0)
 
-    override suspend fun importRecords(context: Context, jsonArray: String) {
+    /**
+     * Digits only, last ten — so the same person stored as +7 916 123-45-67
+     * on one phone and 8(916)1234567 on the other is recognised as one
+     * contact rather than imported a second time.
+     */
+    private fun phoneKey(raw: String): String = raw.filter { it.isDigit() }.takeLast(10)
+
+    private fun existingPhoneKeys(context: Context): Set<String> {
+        val keys = mutableSetOf<String>()
+        runCatching {
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    cursor.getString(0)?.let { number -> phoneKey(number).takeIf { it.isNotBlank() }?.let(keys::add) }
+                }
+            }
+        }
+        return keys
+    }
+
+    private fun existingDisplayNames(context: Context): Set<String> {
+        val names = mutableSetOf<String>()
+        runCatching {
+            context.contentResolver.query(
+                ContactsContract.Contacts.CONTENT_URI,
+                arrayOf(ContactsContract.Contacts.DISPLAY_NAME),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    cursor.getString(0)?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let(names::add)
+                }
+            }
+        }
+        return names
+    }
+
+    /** A contact with any number already on the phone is a duplicate; one with no number at all falls back to its name. */
+    private fun isDuplicate(record: ContactRecord, phones: Set<String>, names: Set<String>): Boolean {
+        val recordKeys = record.phones.map { phoneKey(it) }.filter { it.isNotBlank() }
+        if (recordKeys.isNotEmpty()) return recordKeys.any { it in phones }
+        val name = record.displayName?.trim()?.lowercase()
+        return !name.isNullOrBlank() && name in names
+    }
+
+    override suspend fun importRecords(context: Context, jsonArray: String): ImportSummary {
         val records = Json.decodeFromString<List<ContactRecord>>(jsonArray)
-        if (records.isEmpty()) return
+        if (records.isEmpty()) return ImportSummary(0)
+
+        // Without this, every re-run (and every restart after a dropped
+        // connection) adds a second copy of the entire address book.
+        val existingPhones = existingPhoneKeys(context)
+        val existingNames = existingDisplayNames(context)
+        val fresh = records.filterNot { isDuplicate(it, existingPhones, existingNames) }
+        val skipped = records.size - fresh.size
+        if (fresh.isEmpty()) return ImportSummary(0, skipped)
+
         val account = preferredAccount(context)
         val before = rawContactCount(context)
         // Batches are capped well under the ~500-operation binder transaction limit.
-        records.chunked(80).forEach { chunk ->
+        fresh.chunked(80).forEach { chunk ->
             val ops = ArrayList<ContentProviderOperation>()
             for (record in chunk) {
                 val rawContactIndex = ops.size
@@ -161,9 +222,12 @@ class ContactsModule : TransferModule {
         // applyBatch can report success while the provider quietly drops rows
         // (a rejected account, a read-only provider). Without this check the UI
         // would show a green tick for contacts that never actually landed.
+        // Only meaningful because the all-duplicates case returned above —
+        // otherwise "nothing was inserted" would be normal, not a failure.
         val created = rawContactCount(context) - before
         if (created <= 0) {
             error("Провайдер контактов не принял ни одной записи (аккаунт: ${account?.first ?: "локальный"})")
         }
+        return ImportSummary(created, skipped)
     }
 }

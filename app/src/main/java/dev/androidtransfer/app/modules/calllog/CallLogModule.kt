@@ -3,6 +3,7 @@ package dev.androidtransfer.app.modules.calllog
 import android.content.ContentValues
 import android.content.Context
 import android.provider.CallLog
+import dev.androidtransfer.app.core.transfer.ImportSummary
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.core.transfer.TransferModule
 import dev.androidtransfer.app.core.transfer.TransferSink
@@ -51,10 +52,35 @@ class CallLogModule : TransferModule {
         sink.sendRecords(Json.encodeToString(records), records.size)
     }
 
-    override suspend fun importRecords(context: Context, jsonArray: String) {
+    /** A call is the same call if it's the same number at the same instant — re-runs must not double the log. */
+    private fun existingKeys(context: Context): Set<String> {
+        val keys = mutableSetOf<String>()
+        runCatching {
+            context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.DATE),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    keys += "${cursor.getString(0).orEmpty()}|${cursor.getLong(1)}"
+                }
+            }
+        }
+        return keys
+    }
+
+    override suspend fun importRecords(context: Context, jsonArray: String): ImportSummary {
         val records = Json.decodeFromString<List<CallLogRecord>>(jsonArray)
-        if (records.isEmpty()) return
-        val values = records.map { record ->
+        if (records.isEmpty()) return ImportSummary(0)
+
+        val existing = existingKeys(context)
+        val fresh = records.filterNot { "${it.number.orEmpty()}|${it.date}" in existing }
+        val skipped = records.size - fresh.size
+        if (fresh.isEmpty()) return ImportSummary(0, skipped)
+
+        val values = fresh.map { record ->
             ContentValues().apply {
                 put(CallLog.Calls.NUMBER, record.number)
                 put(CallLog.Calls.TYPE, record.type)
@@ -71,5 +97,6 @@ class CallLogModule : TransferModule {
         if (inserted <= 0) {
             error("Провайдер журнала вызовов не принял ни одной записи")
         }
+        return ImportSummary(inserted, skipped)
     }
 }

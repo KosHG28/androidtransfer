@@ -27,6 +27,23 @@ interface TransferSink {
 }
 
 /**
+ * What actually became of an incoming file. [SKIPPED_DUPLICATE] is not a
+ * failure — it's the receiver recognising something it already has — but it
+ * must not be counted as a fresh arrival either, or a re-run of the same
+ * transfer would report hundreds of files "перенесено" while writing
+ * nothing.
+ */
+enum class ImportOutcome { IMPORTED, SKIPPED_DUPLICATE }
+
+/**
+ * How many records actually landed versus how many the receiver already
+ * had. The sender's announced count can't be used for this: after
+ * deduplication it would claim hundreds of contacts were imported when
+ * every one of them was already on the phone.
+ */
+data class ImportSummary(val imported: Int, val skipped: Int = 0)
+
+/**
  * One category's worth of transfer logic, both directions. A module only
  * needs to override the methods relevant to how its category travels:
  * record-based categories (contacts, call log, calendar, SMS, app list)
@@ -38,9 +55,10 @@ interface TransferModule {
 
     suspend fun export(context: Context, sink: TransferSink)
 
-    suspend fun importRecords(context: Context, jsonArray: String) {}
+    suspend fun importRecords(context: Context, jsonArray: String): ImportSummary = ImportSummary(0)
 
-    suspend fun importFile(context: Context, header: ProtocolMessage.FileHeader, file: File) {}
+    suspend fun importFile(context: Context, header: ProtocolMessage.FileHeader, file: File): ImportOutcome =
+        ImportOutcome.IMPORTED
 }
 
 class CategorySink(private val category: TransferCategory, private val transport: dev.androidtransfer.app.core.transport.P2pTransport) : TransferSink {

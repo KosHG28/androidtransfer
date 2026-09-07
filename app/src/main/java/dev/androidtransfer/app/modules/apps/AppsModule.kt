@@ -3,6 +3,8 @@ package dev.androidtransfer.app.modules.apps
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import dev.androidtransfer.app.core.transfer.ImportOutcome
+import dev.androidtransfer.app.core.transfer.ImportSummary
 import dev.androidtransfer.app.core.transfer.ProtocolMessage
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.core.transfer.TransferModule
@@ -93,13 +95,18 @@ class AppsModule(private val selectedPackages: Set<String>? = null) : TransferMo
         }
     }
 
-    override suspend fun importRecords(context: Context, jsonArray: String) {
+    override suspend fun importRecords(context: Context, jsonArray: String): ImportSummary {
         val apps = Json.decodeFromString<List<AppRecord>>(jsonArray)
         ReceivedAppsHolder.set(apps)
+        val alreadyHere = apps.count { ApkInstaller.isInstalled(context, it.packageName) }
+        return ImportSummary(apps.size - alreadyHere, alreadyHere)
     }
 
-    override suspend fun importFile(context: Context, header: ProtocolMessage.FileHeader, file: File) {
-        val packageName = header.groupKey ?: return
+    override suspend fun importFile(context: Context, header: ProtocolMessage.FileHeader, file: File): ImportOutcome {
+        val packageName = header.groupKey ?: return ImportOutcome.IMPORTED
+        // Already on the phone — the user doesn't need a system install dialog
+        // for something they have. Reported as skipped, not transferred.
+        if (ApkInstaller.isInstalled(context, packageName)) return ImportOutcome.SKIPPED_DUPLICATE
         // TransferManager deletes `file` right after this call returns, so
         // claim it (rename, falling back to copy) rather than reading it
         // here — later parts of the same app may still be in flight.
@@ -111,11 +118,8 @@ class AppsModule(private val selectedPackages: Set<String>? = null) : TransferMo
 
         if (header.isFinalPart) {
             pendingApkParts.remove(packageName)
-            if (ApkInstaller.isInstalled(context, packageName)) {
-                parts.forEach { it.delete() }
-            } else {
-                ApkInstaller.enqueue(context, packageName, parts)
-            }
+            ApkInstaller.enqueue(context, packageName, parts)
         }
+        return ImportOutcome.IMPORTED
     }
 }
