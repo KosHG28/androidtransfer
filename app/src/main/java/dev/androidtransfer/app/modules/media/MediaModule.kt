@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import dev.androidtransfer.app.core.transfer.CategoryEstimate
 import dev.androidtransfer.app.core.transfer.ImportOutcome
 import dev.androidtransfer.app.core.transfer.ProtocolMessage
 import dev.androidtransfer.app.core.transfer.TransferCategory
@@ -29,6 +30,25 @@ class MediaModule : TransferModule {
         for (collection in collections()) {
             exportCollection(context, collection, sink)
         }
+    }
+
+    /** Cheap: MediaStore already knows every file's size, so this is one indexed query per collection, not a disk walk. */
+    override suspend fun estimate(context: Context): CategoryEstimate {
+        var total = 0L
+        for (collection in collections()) {
+            runCatching {
+                context.contentResolver.query(
+                    collection.uri,
+                    arrayOf(MediaStore.MediaColumns.SIZE),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    while (cursor.moveToNext()) total += cursor.getLong(0)
+                }
+            }
+        }
+        return CategoryEstimate(total)
     }
 
     private suspend fun exportCollection(context: Context, collection: Collection, sink: TransferSink) {

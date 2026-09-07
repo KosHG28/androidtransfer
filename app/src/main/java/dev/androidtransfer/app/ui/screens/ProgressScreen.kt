@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -21,10 +22,14 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -40,6 +45,24 @@ import dev.androidtransfer.app.ui.viewmodel.TransferViewModel
 @Composable
 fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
     val state by viewModel.transferState.collectAsState()
+    var showCancelConfirm by remember { mutableStateOf(false) }
+
+    if (showCancelConfirm) {
+        AlertDialog(
+            onDismissRequest = { showCancelConfirm = false },
+            title = { Text("Прервать перенос?") },
+            text = { Text("Уже перенесённые данные останутся на месте. Повторный запуск пропустит то, что уже перенеслось.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCancelConfirm = false
+                    viewModel.cancelTransfer()
+                }) { Text("Прервать") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCancelConfirm = false }) { Text("Продолжить") }
+            },
+        )
+    }
 
     // The foreground service is started (and stopped) by
     // TransferViewModel.attachTransportAndStart()/TransferForegroundService
@@ -80,7 +103,18 @@ fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
             }
 
             when (val s = state) {
-                is TransferState.Running -> RunningContent(s)
+                is TransferState.Running -> {
+                    RunningContent(s)
+                    if (s.stalled) {
+                        Text(
+                            "Данные не передаются уже несколько минут. Возможно, второй телефон вышел из зоны связи " +
+                                "или экран заблокировался. Можно подождать ещё или прервать перенос.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    TextButton(onClick = { showCancelConfirm = true }) { Text("Прервать перенос") }
+                }
                 is TransferState.Error -> {
                     Icon(Icons.Filled.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                     Text("Ошибка: ${s.message}", color = MaterialTheme.colorScheme.error)
@@ -102,11 +136,31 @@ private fun RunningContent(state: TransferState.Running) {
 
     state.peerName?.let { Text("Подключено к $it", style = MaterialTheme.typography.bodyMedium) }
 
+    state.spaceWarning?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+
     if (total > 0) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("$done из $total категорий", style = MaterialTheme.typography.bodySmall)
+            // Bytes when the sender managed to announce a total, categories
+            // otherwise: "2 из 5 категорий" jumps in useless lurches when one
+            // category is four gigabytes and the rest are a megabyte each.
+            val byteFraction = if (state.totalBytesExpected > 0) {
+                (state.bytesTransferred.toFloat() / state.totalBytesExpected).coerceIn(0f, 1f)
+            } else {
+                null
+            }
+            Text(
+                if (byteFraction != null) {
+                    "${Format.megabytes(state.bytesTransferred)} из ${Format.megabytes(state.totalBytesExpected)} " +
+                        "· $done из $total категорий"
+                } else {
+                    "$done из $total категорий"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
             LinearProgressIndicator(
-                progress = { done.toFloat() / total },
+                progress = { byteFraction ?: (done.toFloat() / total) },
                 modifier = Modifier.fillMaxWidth(),
             )
         }

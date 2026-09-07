@@ -43,6 +43,9 @@ enum class ImportOutcome { IMPORTED, SKIPPED_DUPLICATE }
  */
 data class ImportSummary(val imported: Int, val skipped: Int = 0)
 
+/** Roughly how much a category will send, known before a single byte moves. */
+data class CategoryEstimate(val bytes: Long)
+
 /**
  * One category's worth of transfer logic, both directions. A module only
  * needs to override the methods relevant to how its category travels:
@@ -54,6 +57,16 @@ interface TransferModule {
     val category: TransferCategory
 
     suspend fun export(context: Context, sink: TransferSink)
+
+    /**
+     * Size of what [export] is about to send, or null when it can't be known
+     * cheaply — walking a user-picked SAF folder tree twice (once to measure,
+     * once to send) can take minutes on a big folder, which is a worse deal
+     * than an approximate total. Used for the receiver's free-space check and
+     * for an honest overall progress bar, so an over- or under-estimate is
+     * survivable; a long stall before the transfer starts is not.
+     */
+    suspend fun estimate(context: Context): CategoryEstimate? = null
 
     suspend fun importRecords(context: Context, jsonArray: String): ImportSummary = ImportSummary(0)
 

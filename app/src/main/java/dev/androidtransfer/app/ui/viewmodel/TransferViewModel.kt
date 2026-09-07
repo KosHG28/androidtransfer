@@ -169,6 +169,11 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
         activeManager?.startSending(UUID.randomUUID().toString(), orderedSelection(), deviceName)
     }
 
+    /** Stops the running transfer at the user's request; the service closes the link once it sees the terminal state. */
+    fun cancelTransfer() {
+        activeManager?.cancel()
+    }
+
     /**
      * Small, quick categories go first and the app APKs — potentially several
      * gigabytes — go last. Otherwise a long-running app transfer starves

@@ -31,6 +31,12 @@ sealed interface TransferState {
         val speedBytesPerSecond: Double,
         val currentFileBytesTransferred: Long,
         val currentFileTotalBytes: Long,
+        /** Nothing has moved for a while, but the link never reported a clean disconnect. */
+        val stalled: Boolean = false,
+        /** Announced up front by the sender; 0 when unknown. */
+        val totalBytesExpected: Long = 0,
+        /** Set on the receiver when the incoming transfer looks bigger than the free space it has. */
+        val spaceWarning: String? = null,
     ) : TransferState
 
     data class Completed(val categories: List<CategoryProgress>) : TransferState
@@ -90,6 +96,20 @@ class TransferManager(
     /** Set at the top of [startSending] — distinguishes the two terminal-state call sites below for history recording, since Disconnected/TransportError can happen on either side. */
     private var startedAsSender = false
 
+    private var sendJob: kotlinx.coroutines.Job? = null
+
+    // Stall detection. A link can stop moving data without ever reporting a
+    // disconnect — the peer walks out of range, Play Services wedges, the
+    // cable is nudged — and the UI would otherwise sit on a frozen progress
+    // bar indefinitely with no way to tell whether to keep waiting.
+    @Volatile private var lastActivityMs = 0L
+    @Volatile private var stalled = false
+    /** The clock only starts once data is actually meant to be flowing; a receiver waiting on a sender who is still picking categories is not stalled. */
+    @Volatile private var transferStarted = false
+
+    private var totalBytesExpected = 0L
+    private var spaceWarning: String? = null
+
     /**
      * The module map built in [TransferViewModel.attachTransportAndStart] is
      * captured right after the transport connects — for the sender, that's
@@ -109,12 +129,26 @@ class TransferManager(
         categoryOrder.clear()
         categoryOrder.addAll(categories)
         categories.forEach { categoryStatus[it] = CategoryStatus.PENDING }
+        markActivity()
+        transferStarted = true
         emitRunning()
 
-        scope.launch {
+        sendJob = scope.launch {
             runCatching {
                 transport.sendMessage(ProtocolMessage.Hello(sessionId, deviceName, appVersion = "0.1.0"))
-                transport.sendMessage(ProtocolMessage.Manifest(sessionId, categories))
+
+                // Measured before anything is sent so the receiver can refuse
+                // or warn about free space up front rather than filling its
+                // disk and failing mid-transfer.
+                var planned = 0L
+                var incomplete = false
+                for (category in categories) {
+                    val estimate = runCatching { modules[category]?.estimate(context) }.getOrNull()
+                    if (estimate == null) incomplete = true else planned += estimate.bytes
+                }
+                totalBytesExpected = planned
+                markActivity()
+                transport.sendMessage(ProtocolMessage.Manifest(sessionId, categories, planned, incomplete))
                 for (category in categories) {
                     if (connectionLost) break
                     val module = modules[category]
@@ -159,8 +193,10 @@ class TransferManager(
      * with no progress bar and no speed at all.
      */
     fun startListening() {
+        startStallWatchdog()
         scope.launch {
             transport.events.collect { event ->
+                markActivity()
                 when (event) {
                     is TransportEvent.Connected -> {
                         peerName = event.peerName
@@ -186,12 +222,82 @@ class TransferManager(
         }
     }
 
+    /**
+     * Warns instead of refusing: the estimate can be short (a folder tree that
+     * couldn't be measured) or long (duplicates that will be skipped on
+     * arrival), so the honest move is to show the numbers and let the user
+     * decide — they have a cancel button now. Silence was the bad option:
+     * running out of space mid-transfer surfaces as an opaque write error
+     * several gigabytes in.
+     */
+    private fun checkFreeSpace(estimatedBytes: Long, sizesIncomplete: Boolean): String? {
+        if (estimatedBytes <= 0) return null
+        val free = runCatching {
+            @Suppress("DEPRECATION")
+            val stat = android.os.StatFs(android.os.Environment.getExternalStorageDirectory().absolutePath)
+            stat.availableBytes
+        }.getOrNull() ?: return null
+        if (estimatedBytes <= free) return null
+        val needed = Format.megabytes(estimatedBytes)
+        val available = Format.megabytes(free)
+        return buildString {
+            append("Может не хватить места: нужно ")
+            if (sizesIncomplete) append("минимум ")
+            append("$needed, свободно $available")
+        }
+    }
+
+    private fun markActivity() {
+        lastActivityMs = System.currentTimeMillis()
+        stalled = false
+    }
+
+    /**
+     * Reports a transfer that has stopped moving without the transport ever
+     * saying so, so the user can stop waiting on something that is never
+     * coming back. Deliberately only a warning plus an offer to cancel, never
+     * an automatic abort: a slow link mid-way through a 2 GB app is not a
+     * failure, and killing it would be worse than waiting.
+     */
+    private fun startStallWatchdog() {
+        scope.launch {
+            while (kotlinx.coroutines.isActive) {
+                kotlinx.coroutines.delay(STALL_CHECK_INTERVAL_MS)
+                if (!transferStarted) continue
+                if (_state.value !is TransferState.Running) continue
+                val idleFor = System.currentTimeMillis() - lastActivityMs
+                val nowStalled = idleFor >= STALL_THRESHOLD_MS
+                if (nowStalled != stalled) {
+                    stalled = nowStalled
+                    emitRunning()
+                }
+            }
+        }
+    }
+
+    /**
+     * User-initiated stop. [connectionLost] doubles as the send loop's "give
+     * up" flag, and cancelling the job interrupts a file already streaming —
+     * the transport itself is closed by TransferForegroundService once it
+     * sees the terminal state.
+     */
+    fun cancel(reason: String = "Перенос отменён") {
+        connectionLost = true
+        sendJob?.cancel()
+        finishSession(TransferState.Error(reason))
+    }
+
     private suspend fun handleMessage(message: ProtocolMessage) {
         when (message) {
             is ProtocolMessage.Manifest -> {
                 categoryOrder.clear()
                 categoryOrder.addAll(message.categories)
                 message.categories.forEach { categoryStatus.putIfAbsent(it, CategoryStatus.PENDING) }
+                totalBytesExpected = message.estimatedBytes
+                spaceWarning = checkFreeSpace(message.estimatedBytes, message.sizesIncomplete)
+                // The receiver's stall clock starts here: the sender has
+                // announced what it's about to send, so data is now due.
+                transferStarted = true
                 emitRunning()
             }
             is ProtocolMessage.Records -> {
@@ -380,6 +486,16 @@ class TransferManager(
             speedBytesPerSecond = speedBytesPerSecond,
             currentFileBytesTransferred = currentFileBytes,
             currentFileTotalBytes = currentFileTotal,
+            stalled = stalled,
+            totalBytesExpected = totalBytesExpected,
+            spaceWarning = spaceWarning,
         )
+    }
+
+    companion object {
+        private const val STALL_CHECK_INTERVAL_MS = 10_000L
+
+        /** Generous on purpose: reading a huge media library or hashing a multi-gigabyte APK can legitimately go quiet for a while. */
+        private const val STALL_THRESHOLD_MS = 120_000L
     }
 }

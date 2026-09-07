@@ -3,6 +3,7 @@ package dev.androidtransfer.app.modules.apps
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import dev.androidtransfer.app.core.transfer.CategoryEstimate
 import dev.androidtransfer.app.core.transfer.ImportOutcome
 import dev.androidtransfer.app.core.transfer.ImportSummary
 import dev.androidtransfer.app.core.transfer.ProtocolMessage
@@ -79,6 +80,14 @@ class AppsModule(private val selectedPackages: Set<String>? = null) : TransferMo
             // One unreadable APK (OEM restriction, DRM-protected app, ...) must not abort the rest.
             runCatching { sendApkFiles(sink, app) }
         }
+    }
+
+    /** APK sizes come straight off the filesystem — the app list is usually the bulk of a transfer, so this is the number that matters most. */
+    override suspend fun estimate(context: Context): CategoryEstimate {
+        val chosen = InstalledApps.list(context)
+            .filter { selectedPackages == null || it.packageName in selectedPackages }
+            .filter { it.isTransferable }
+        return CategoryEstimate(chosen.sumOf { it.sizeBytes })
     }
 
     private suspend fun sendApkFiles(sink: TransferSink, app: InstalledApp) {

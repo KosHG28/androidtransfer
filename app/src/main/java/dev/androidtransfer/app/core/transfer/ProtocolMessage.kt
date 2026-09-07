@@ -17,9 +17,22 @@ sealed interface ProtocolMessage {
     @SerialName("hello")
     data class Hello(val sessionId: String, val deviceName: String, val appVersion: String) : ProtocolMessage
 
+    /**
+     * [estimatedBytes] lets the receiver check its free space before a single
+     * file lands, instead of failing halfway through with a confusing write
+     * error, and gives both sides an honest byte-based progress bar.
+     * [sizesIncomplete] is set when some category couldn't be measured
+     * cheaply (a user-picked folder tree), so the figure is a floor rather
+     * than a total and the UI can say so.
+     */
     @Serializable
     @SerialName("manifest")
-    data class Manifest(val sessionId: String, val categories: List<TransferCategory>) : ProtocolMessage
+    data class Manifest(
+        val sessionId: String,
+        val categories: List<TransferCategory>,
+        val estimatedBytes: Long = 0,
+        val sizesIncomplete: Boolean = false,
+    ) : ProtocolMessage
 
     /** A whole category's worth of small records (contacts, SMS, call log, calendar, app list) sent as one JSON array. */
     @Serializable

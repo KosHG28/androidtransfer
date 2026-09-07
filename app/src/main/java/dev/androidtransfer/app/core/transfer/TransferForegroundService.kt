@@ -9,6 +9,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import dev.androidtransfer.app.MainActivity
 import dev.androidtransfer.app.R
 import dev.androidtransfer.app.TransferApplication
@@ -50,6 +51,7 @@ class TransferForegroundService : Service() {
 
     private var transport: P2pTransport? = null
     private var manager: TransferManager? = null
+    private var lastNotificationUpdateMs = 0L
 
     private val _state = MutableStateFlow<TransferState>(TransferState.Idle)
     val state: StateFlow<TransferState> = _state
@@ -87,6 +89,7 @@ class TransferForegroundService : Service() {
         stateJob = serviceScope.launch {
             newManager.state.collect { s ->
                 _state.value = s
+                if (s is TransferState.Running) publishProgressNotification(s)
                 if (s is TransferState.Completed || s is TransferState.Error) scheduleShutdown()
             }
         }
@@ -137,17 +140,50 @@ class TransferForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun buildNotification(): Notification {
+    /**
+     * The notification is the only thing the user can see once they've
+     * navigated away — which, now that a transfer survives that, is a state
+     * they can sit in for a long time. A static "перенос идёт" gives them no
+     * way to tell progress from a hang. Rate-limited because progress ticks
+     * arrive far faster than a notification should be redrawn.
+     */
+    private fun publishProgressNotification(state: TransferState.Running) {
+        val now = System.currentTimeMillis()
+        if (now - lastNotificationUpdateMs < NOTIFICATION_UPDATE_INTERVAL_MS) return
+        lastNotificationUpdateMs = now
+        val text = when {
+            state.stalled -> "Передача остановилась — проверьте второй телефон"
+            state.totalBytesExpected > 0 ->
+                "${Format.megabytes(state.bytesTransferred)} из ${Format.megabytes(state.totalBytesExpected)}" +
+                    Format.speed(state.speedBytesPerSecond).let { if (it.isEmpty()) "" else " · $it" }
+            state.bytesTransferred > 0 -> Format.megabytes(state.bytesTransferred)
+            else -> getString(R.string.transfer_notification_text)
+        }
+        val percent = if (state.totalBytesExpected > 0) {
+            ((state.bytesTransferred * 100) / state.totalBytesExpected).toInt().coerceIn(0, 100)
+        } else {
+            null
+        }
+        runCatching {
+            NotificationManagerCompat.from(this)
+                .notify(NOTIFICATION_ID, buildNotification(text, percent))
+        }
+    }
+
+    private fun buildNotification(text: String? = null, percent: Int? = null): Notification {
         val openAppIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Builder(this, TransferApplication.TRANSFER_NOTIFICATION_CHANNEL)
             .setContentTitle(getString(R.string.transfer_notification_title))
-            .setContentText(getString(R.string.transfer_notification_text))
+            .setContentText(text ?: getString(R.string.transfer_notification_text))
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(openAppIntent)
             .setOngoing(true)
+            .apply {
+                if (percent != null) setProgress(100, percent, false)
+            }
             .build()
     }
 
@@ -156,6 +192,8 @@ class TransferForegroundService : Service() {
 
         /** How long the link stays open after a session ends, so trailing messages can flush. See [scheduleShutdown]. */
         private const val TERMINAL_LINGER_MS = 4_000L
+
+        private const val NOTIFICATION_UPDATE_INTERVAL_MS = 1_000L
 
         @Volatile private var instance: TransferForegroundService? = null
         @Volatile private var pendingAction: ((TransferForegroundService) -> Unit)? = null
