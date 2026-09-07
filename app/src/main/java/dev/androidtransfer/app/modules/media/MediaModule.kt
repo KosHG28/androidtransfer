@@ -87,10 +87,16 @@ class MediaModule : TransferModule {
             return
         }
 
+        // Deliberately not header.relativePath: that's the *sender's* folder
+        // (e.g. DCIM/Camera), and reusing it here would drop received photos
+        // straight into the receiver's own camera roll — mixing them in and
+        // risking same-name collisions with the receiver's own shots. Every
+        // other module (files/WhatsApp/custom folder) nests under its own
+        // AndroidTransfer subfolder for the same reason; media does too now.
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, header.displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, header.mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, header.relativePath ?: "$defaultDir/AndroidTransfer/")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "$defaultDir/AndroidTransfer/")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val itemUri = context.contentResolver.insert(collectionUri, values) ?: error("Could not create media entry")

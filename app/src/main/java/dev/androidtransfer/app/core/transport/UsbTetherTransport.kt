@@ -43,9 +43,10 @@ import java.util.UUID
  * Framing assumes [sendMessage]/[sendFile] are only ever called
  * sequentially by a single writer (true of TransferManager's one
  * send-loop coroutine): a control frame sent mid-file-transfer would be
- * misread as a stray chunk by [receiveFile] and dropped, since the frames
- * between a FileHeader and its declared byte count are all assumed to be
- * FRAME_TYPE_FILE_CHUNK.
+ * misread as a stray chunk by [receiveFile] and dropped. A file's end is
+ * marked explicitly (FRAME_TYPE_FILE_END) rather than inferred by counting
+ * up to the header's declared size, so a size that's off by even one byte
+ * can't desync the rest of the session.
  */
 class UsbTetherTransport(context: Context) : P2pTransport {
 
@@ -55,6 +56,19 @@ class UsbTetherTransport(context: Context) : P2pTransport {
         const val DEFAULT_PORT = 57123
         private const val FRAME_TYPE_CONTROL: Byte = 1
         private const val FRAME_TYPE_FILE_CHUNK: Byte = 2
+
+        /**
+         * Sent once, right after the last chunk. The receiver used to decide a
+         * file was complete once it had counted [ProtocolMessage.FileHeader.sizeBytes]
+         * worth of chunk bytes — fine as long as that declared size exactly
+         * matches what open() actually streams. If a module's declared size is
+         * ever off by even one byte (a stale MediaStore SIZE column, a provider
+         * that estimates), the stream desyncs permanently: leftover bytes get
+         * misread as the next frame's header, or the receiver hangs waiting for
+         * bytes that already arrived. An explicit end marker makes completion
+         * independent of the size being exactly right.
+         */
+        private const val FRAME_TYPE_FILE_END: Byte = 3
         private const val CHUNK_SIZE = 256 * 1024
     }
 
@@ -126,18 +140,22 @@ class UsbTetherTransport(context: Context) : P2pTransport {
         val dest = File(appContext.cacheDir, "incoming_${UUID.randomUUID()}")
         var received = 0L
         dest.outputStream().use { out ->
-            while (received < header.sizeBytes) {
+            loop@ while (true) {
                 val type = input.readByte()
                 val length = input.readInt()
-                if (type != FRAME_TYPE_FILE_CHUNK) {
-                    skipFully(input, length)
-                    continue
+                when (type) {
+                    FRAME_TYPE_FILE_CHUNK -> {
+                        val buffer = ByteArray(length)
+                        input.readFully(buffer)
+                        out.write(buffer)
+                        received += length
+                        // header.sizeBytes is only ever used for the progress
+                        // fraction here, never to decide when the file is done.
+                        _events.emit(TransportEvent.Progress(header.itemId, received, header.sizeBytes))
+                    }
+                    FRAME_TYPE_FILE_END -> break@loop
+                    else -> skipFully(input, length)
                 }
-                val buffer = ByteArray(length)
-                input.readFully(buffer)
-                out.write(buffer)
-                received += length
-                _events.emit(TransportEvent.Progress(header.itemId, received, header.sizeBytes))
             }
         }
         _events.emit(TransportEvent.FileReceived(header, dest))
@@ -182,6 +200,13 @@ class UsbTetherTransport(context: Context) : P2pTransport {
                 sent += read
                 _events.emit(TransportEvent.Progress(header.itemId, sent, header.sizeBytes))
             }
+        }
+        // Tells the receiver the file is complete regardless of whether `sent`
+        // ended up matching header.sizeBytes exactly.
+        writeLock.withLock {
+            out.writeByte(FRAME_TYPE_FILE_END.toInt())
+            out.writeInt(0)
+            out.flush()
         }
     }
 

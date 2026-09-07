@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
-import android.os.Build
 import dev.androidtransfer.app.core.transfer.ProtocolMessage
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.core.transfer.TransferModule
@@ -35,10 +34,14 @@ class WallpaperModule : TransferModule {
                 ?: error("Система не отдала текущие обои")
             drawableToBitmap(drawable)
         }.getOrElse { cause ->
-            if (cause is SecurityException || Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Blaming "Android 13+" for every failure on Android 13+ — instead
+            // of only when the OS actually refused — would mask a real bug
+            // behind a plausible-sounding but wrong explanation. SecurityException
+            // is the actual, documented signal for the launcher-only restriction.
+            if (cause is SecurityException) {
                 error("Android 13+ разрешает читать обои только лаунчеру — перенести их нельзя без root")
             }
-            error(cause.message ?: "Не удалось прочитать обои")
+            error(cause.message ?: cause.javaClass.simpleName)
         }
 
         val staged = File(context.cacheDir, "wallpaper_export.png")
@@ -53,9 +56,10 @@ class WallpaperModule : TransferModule {
     }
 
     override suspend fun importFile(context: Context, header: ProtocolMessage.FileHeader, file: File) {
-        runCatching {
-            file.inputStream().use { WallpaperManager.getInstance(context).setStream(it) }
-        }
+        // No runCatching here on purpose: TransferManager already wraps this
+        // call and needs the exception to escape to know the import failed —
+        // swallowing it here would report success regardless of what happened.
+        file.inputStream().use { WallpaperManager.getInstance(context).setStream(it) }
     }
 
     private fun drawableToBitmap(drawable: Drawable): Bitmap {

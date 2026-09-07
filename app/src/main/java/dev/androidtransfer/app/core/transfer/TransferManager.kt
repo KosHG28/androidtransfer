@@ -55,6 +55,7 @@ class TransferManager(
     private val categoryOrder = mutableListOf<TransferCategory>()
     private val categoryStatus = mutableMapOf<TransferCategory, CategoryStatus>()
     private val categoryDetail = mutableMapOf<TransferCategory, String>()
+    private val categoryFileCount = mutableMapOf<TransferCategory, Int>()
     private var peerName: String? = null
 
     // Cumulative-bytes + smoothed-speed tracking across the whole session, not just the current file.
@@ -192,10 +193,16 @@ class TransferManager(
         }
 
         val result = runCatching { modules[header.category]?.importFile(context, header, file) }
-        result.onFailure { e ->
-            categoryStatus[header.category] = CategoryStatus.FAILED
-            categoryDetail[header.category] = e.message ?: e.javaClass.simpleName
-        }
+        result
+            .onSuccess {
+                val count = (categoryFileCount[header.category] ?: 0) + 1
+                categoryFileCount[header.category] = count
+                categoryDetail[header.category] = "$count файл(ов)"
+            }
+            .onFailure { e ->
+                categoryStatus[header.category] = CategoryStatus.FAILED
+                categoryDetail[header.category] = e.message ?: e.javaClass.simpleName
+            }
         file.delete()
         emitRunning()
     }
