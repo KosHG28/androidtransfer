@@ -9,6 +9,7 @@ import androidx.navigation.compose.rememberNavController
 import dev.androidtransfer.app.ui.screens.AppPickerScreen
 import dev.androidtransfer.app.ui.screens.AppsListScreen
 import dev.androidtransfer.app.ui.screens.CategorySelectionScreen
+import dev.androidtransfer.app.ui.screens.HistoryScreen
 import dev.androidtransfer.app.ui.screens.HomeScreen
 import dev.androidtransfer.app.ui.screens.ProgressScreen
 import dev.androidtransfer.app.ui.screens.SummaryScreen
@@ -29,6 +30,7 @@ private object Routes {
     const val PROGRESS = "progress"
     const val APPS = "apps"
     const val SUMMARY = "summary"
+    const val HISTORY = "history"
 }
 
 @Composable
@@ -38,10 +40,13 @@ fun AppNav() {
 
     NavHost(navController = navController, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
-            HomeScreen(onRoleChosen = { role ->
-                viewModel.role = role
-                navController.navigate(Routes.TRANSPORT)
-            })
+            HomeScreen(
+                onRoleChosen = { role ->
+                    viewModel.role = role
+                    navController.navigate(Routes.TRANSPORT)
+                },
+                onOpenHistory = { navController.navigate(Routes.HISTORY) },
+            )
         }
         composable(Routes.TRANSPORT) {
             TransportScreen(viewModel, onTransportChosen = { kind ->
@@ -77,6 +82,9 @@ fun AppNav() {
                 onOpenApps = { navController.navigate(Routes.APPS) },
                 onFinish = { navController.popBackStack(Routes.HOME, inclusive = false) },
             )
+        }
+        composable(Routes.HISTORY) {
+            HistoryScreen(onBack = { navController.popBackStack() })
         }
     }
 }

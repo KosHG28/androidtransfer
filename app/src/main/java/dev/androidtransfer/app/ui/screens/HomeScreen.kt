@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,7 +28,7 @@ import dev.androidtransfer.app.R
 import dev.androidtransfer.app.ui.viewmodel.Role
 
 @Composable
-fun HomeScreen(onRoleChosen: (Role) -> Unit) {
+fun HomeScreen(onRoleChosen: (Role) -> Unit, onOpenHistory: () -> Unit) {
     Scaffold { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
@@ -53,6 +54,9 @@ fun HomeScreen(onRoleChosen: (Role) -> Unit) {
                     label = stringResource(R.string.home_role_receive),
                     onClick = { onRoleChosen(Role.RECEIVER) },
                 )
+            }
+            TextButton(onClick = onOpenHistory, modifier = Modifier.padding(top = 8.dp)) {
+                Text("История переносов")
             }
         }
     }

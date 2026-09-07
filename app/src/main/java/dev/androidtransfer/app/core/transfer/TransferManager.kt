@@ -1,6 +1,9 @@
 package dev.androidtransfer.app.core.transfer
 
 import android.content.Context
+import dev.androidtransfer.app.core.history.HistoryCategoryResult
+import dev.androidtransfer.app.core.history.TransferHistoryEntry
+import dev.androidtransfer.app.core.history.TransferHistoryStore
 import dev.androidtransfer.app.core.transport.P2pTransport
 import dev.androidtransfer.app.core.transport.TransportEvent
 import kotlinx.coroutines.CoroutineScope
@@ -9,7 +12,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class CategoryStatus { PENDING, RUNNING, DONE, FAILED }
 
 /** [detail] carries what actually happened: a count on success, or the failure reason — a bare red icon tells the user nothing. */
@@ -80,6 +85,9 @@ class TransferManager(
      */
     @Volatile private var connectionLost = false
 
+    /** Set at the top of [startSending] — distinguishes the two terminal-state call sites below for history recording, since Disconnected/TransportError can happen on either side. */
+    private var startedAsSender = false
+
     /**
      * The module map built in [TransferViewModel.attachTransportAndStart] is
      * captured right after the transport connects — for the sender, that's
@@ -95,6 +103,7 @@ class TransferManager(
     }
 
     fun startSending(sessionId: String, categories: List<TransferCategory>, deviceName: String) {
+        startedAsSender = true
         categoryOrder.clear()
         categoryOrder.addAll(categories)
         categories.forEach { categoryStatus[it] = CategoryStatus.PENDING }
@@ -129,12 +138,13 @@ class TransferManager(
                     error("Соединение потеряно во время переноса")
                 }
                 transport.sendMessage(ProtocolMessage.TransferDone(sessionId))
-                _state.value = TransferState.Completed(snapshotCategories())
+                finishSession(TransferState.Completed(snapshotCategories()))
             }.onFailure { e ->
                 // A disconnect already put a more specific message in _state
-                // via the Disconnected handler in startListening() — don't
-                // clobber it with the generic "Соединение потеряно" above.
-                if (!connectionLost) _state.value = TransferState.Error(e.message ?: "Transfer failed")
+                // (and recorded history) via the Disconnected handler in
+                // startListening() — don't clobber it with the generic
+                // "Соединение потеряно" above.
+                if (!connectionLost) finishSession(TransferState.Error(e.message ?: "Transfer failed"))
             }
         }
     }
@@ -156,9 +166,9 @@ class TransferManager(
                     }
                     is TransportEvent.Disconnected -> {
                         connectionLost = true
-                        _state.value = TransferState.Error(event.reason)
+                        finishSession(TransferState.Error(event.reason))
                     }
-                    is TransportEvent.TransportError -> _state.value = TransferState.Error(event.message)
+                    is TransportEvent.TransportError -> finishSession(TransferState.Error(event.message))
                     is TransportEvent.Progress -> {
                         onProgress(event.itemId, event.bytesTransferred, event.totalBytes)
                         emitRunningUnlessFinished()
@@ -196,7 +206,7 @@ class TransferManager(
                 }
                 emitRunning()
             }
-            is ProtocolMessage.TransferDone -> _state.value = TransferState.Completed(snapshotCategories())
+            is ProtocolMessage.TransferDone -> finishSession(TransferState.Completed(snapshotCategories()))
             is ProtocolMessage.Error -> {
                 message.category?.let {
                     categoryStatus[it] = CategoryStatus.FAILED
@@ -270,6 +280,33 @@ class TransferManager(
 
     private fun snapshotCategories(): List<CategoryProgress> =
         categoryOrder.map { CategoryProgress(it, categoryStatus[it] ?: CategoryStatus.PENDING, categoryDetail[it]) }
+
+    /**
+     * The single path to a terminal state. Guards against being called twice
+     * for the same session (e.g. a disconnect already recorded, then the
+     * send loop's own failure handler firing right after) and logs a
+     * [TransferHistoryEntry] alongside setting [_state] — every place that
+     * used to assign Completed/Error to [_state] directly goes through this
+     * instead, so history can't silently miss one.
+     */
+    private fun finishSession(state: TransferState) {
+        if (_state.value is TransferState.Completed || _state.value is TransferState.Error) return
+        _state.value = state
+        runCatching {
+            TransferHistoryStore.record(
+                context,
+                TransferHistoryEntry(
+                    timestampMillis = System.currentTimeMillis(),
+                    role = if (startedAsSender) "SENDER" else "RECEIVER",
+                    transport = transport.name,
+                    peerName = peerName,
+                    overallFailed = state is TransferState.Error,
+                    errorMessage = (state as? TransferState.Error)?.message,
+                    categories = snapshotCategories().map { HistoryCategoryResult(it.category, it.status, it.detail) },
+                ),
+            )
+        }
+    }
 
     /** Late progress ticks must not drag a finished transfer back to "running". */
     private fun emitRunningUnlessFinished() {

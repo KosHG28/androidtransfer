@@ -10,6 +10,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.androidtransfer.app.core.transfer.TransferCategory
+import dev.androidtransfer.app.core.transfer.TransferForegroundService
 import dev.androidtransfer.app.core.transfer.TransferManager
 import dev.androidtransfer.app.core.transfer.TransferModule
 import dev.androidtransfer.app.core.transfer.TransferState
@@ -25,6 +26,7 @@ import dev.androidtransfer.app.modules.files.CustomFolderModule
 import dev.androidtransfer.app.modules.files.FilesModule
 import dev.androidtransfer.app.modules.media.MediaModule
 import dev.androidtransfer.app.modules.wallpaper.WallpaperModule
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -69,7 +71,16 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
 
     var nearbyTransport: NearbyTransport? = null
     var usbTransport: UsbTetherTransport? = null
-    private var transferManager: TransferManager? = null
+    private var activeManager: TransferManager? = null
+    private var stateCollectJob: Job? = null
+
+    /**
+     * Flips once [attachTransportAndStart] hands the transport to
+     * TransferForegroundService — from that point on the service owns
+     * closing it, so [onCleared] below must not also close it (that would
+     * defeat the whole point of moving ownership there).
+     */
+    private var transportOwnedByService = false
 
     private val _transferState = MutableStateFlow<TransferState>(TransferState.Idle)
     val transferState: StateFlow<TransferState> = _transferState
@@ -94,24 +105,37 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
     )
 
     /**
-     * Wires a connected transport to a fresh TransferManager. Both roles
-     * listen: the receiver to route incoming data, the sender because
-     * progress and speed also arrive as transport events.
+     * Hands the now-connected transport to TransferForegroundService, which
+     * becomes its sole owner from this point on and drives a fresh
+     * TransferManager over it. Both roles need the manager listening: the
+     * receiver to route incoming data, the sender because progress/speed
+     * also arrive as transport events.
+     *
+     * Doing the handoff here (rather than leaving the manager owned by this
+     * ViewModel) matters because the ViewModel is Activity-scoped: swiping
+     * the task away from Recents destroys the Activity and clears the
+     * ViewModel even though the *process* survives (the foreground service
+     * itself keeps it alive). Once the transport belongs to the service,
+     * that teardown no longer touches it.
      */
     fun attachTransportAndStart(transport: P2pTransport) {
-        val manager = TransferManager(getApplication(), transport, buildModules())
-        transferManager = manager
+        transportOwnedByService = true
         _transferState.value = TransferState.Idle
-        viewModelScope.launch { manager.state.collect { _transferState.value = it } }
-        manager.startListening()
+        val app = getApplication<Application>()
+        TransferForegroundService.withService(app) { service ->
+            val manager = service.attach(app, transport, buildModules())
+            activeManager = manager
+            stateCollectJob?.cancel()
+            stateCollectJob = viewModelScope.launch { service.state.collect { _transferState.value = it } }
+        }
     }
 
     fun beginSending(deviceName: String) {
         // Rebuild with whatever the user actually chose on CategorySelectionScreen/
         // AppPickerScreen — the map built in attachTransportAndStart is stale (it
         // was captured right after connecting, before those screens ran).
-        transferManager?.updateModules(buildModules())
-        transferManager?.startSending(UUID.randomUUID().toString(), orderedSelection(), deviceName)
+        activeManager?.updateModules(buildModules())
+        activeManager?.startSending(UUID.randomUUID().toString(), orderedSelection(), deviceName)
     }
 
     /**
@@ -137,7 +161,13 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
-        nearbyTransport?.close()
-        usbTransport?.close()
+        // Once handed to TransferForegroundService, closing here would kill
+        // the very connection the service exists to protect. Only clean up
+        // a transport that never got past pairing (no transfer ever
+        // attached it to the service).
+        if (!transportOwnedByService) {
+            nearbyTransport?.close()
+            usbTransport?.close()
+        }
     }
 }
