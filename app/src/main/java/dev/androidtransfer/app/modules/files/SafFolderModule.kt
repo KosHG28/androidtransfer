@@ -12,6 +12,7 @@ import dev.androidtransfer.app.core.transfer.ProtocolMessage
 import dev.androidtransfer.app.core.transfer.TransferCategory
 import dev.androidtransfer.app.core.transfer.TransferModule
 import dev.androidtransfer.app.core.transfer.TransferSink
+import dev.androidtransfer.app.modules.media.MediaStoreSupport
 import java.io.File
 
 /**
@@ -75,8 +76,11 @@ open class SafFolderModule(
             @Suppress("DEPRECATION")
             val destDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "AndroidTransfer/$destinationSubFolder/${header.relativePath.orEmpty()}")
             destDir.mkdirs()
-            val destFile = File(destDir, header.displayName)
-            if (destFile.exists() && destFile.length() == header.sizeBytes) return ImportOutcome.SKIPPED_DUPLICATE
+            val existing = File(destDir, header.displayName)
+            if (existing.exists() && existing.length() == header.sizeBytes) return ImportOutcome.SKIPPED_DUPLICATE
+            // Same name but a different size is a *different* file — write it
+            // beside the existing one rather than truncating it.
+            val destFile = MediaStoreSupport.uniqueFile(destDir, header.displayName)
             destFile.outputStream().use { out -> file.inputStream().use { it.copyTo(out) } }
         }
         return ImportOutcome.IMPORTED

@@ -3,6 +3,7 @@ package dev.androidtransfer.app.modules.media
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
+import java.io.File
 
 /**
  * The folder-mapping and duplicate-detection rules shared by every module
@@ -67,6 +68,35 @@ internal object MediaStoreSupport {
             )?.use { it.count > 0 } ?: false
         }.getOrDefault(false)
     }
+
+    /**
+     * A free filename in [dir], suffixing "(1)", "(2)"… on collision.
+     *
+     * Only the pre-Android-10 write path needs this, and it badly does:
+     * there we write to a real path with a plain output stream, which
+     * truncates whatever is already there. Now that files land in the
+     * receiver's own folders (DCIM/Camera and friends) rather than a
+     * separate AndroidTransfer subfolder, a same-name collision is entirely
+     * likely — two phones both produce IMG_20230101_120000.jpg — and would
+     * silently destroy the receiver's own photo. MediaStore does this
+     * renaming itself on Android 10+, which is why only the legacy branch
+     * calls this.
+     */
+    fun uniqueFile(dir: File, displayName: String): File {
+        val direct = File(dir, displayName)
+        if (!direct.exists()) return direct
+        val base = displayName.substringBeforeLast('.', displayName)
+        val extension = displayName.substringAfterLast('.', "")
+        val suffix = if (extension.isEmpty()) "" else ".$extension"
+        for (index in 1..MAX_NAME_ATTEMPTS) {
+            val candidate = File(dir, "$base ($index)$suffix")
+            if (!candidate.exists()) return candidate
+        }
+        // Astronomically unlikely; a unique name beats overwriting either way.
+        return File(dir, "$base (${System.currentTimeMillis()})$suffix")
+    }
+
+    private const val MAX_NAME_ATTEMPTS = 999
 
     /** Total bytes of a collection, straight from the index — no disk walk. */
     fun collectionSize(context: Context, collectionUri: Uri): Long {

@@ -101,10 +101,12 @@ class AudioModule : TransferModule {
             @Suppress("DEPRECATION")
             val destDir = File(Environment.getExternalStorageDirectory(), destination)
             destDir.mkdirs()
-            val destFile = File(destDir, header.displayName)
+            // See MediaStoreSupport.uniqueFile: a plain output stream here
+            // would truncate a same-named track the receiver already had.
+            val destFile = MediaStoreSupport.uniqueFile(destDir, header.displayName)
             destFile.outputStream().use { out -> file.inputStream().use { it.copyTo(out) } }
             val legacyValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, header.displayName)
+                put(MediaStore.MediaColumns.DISPLAY_NAME, destFile.name)
                 put(MediaStore.MediaColumns.MIME_TYPE, header.mimeType)
                 @Suppress("DEPRECATION")
                 put(MediaStore.MediaColumns.DATA, destFile.absolutePath)

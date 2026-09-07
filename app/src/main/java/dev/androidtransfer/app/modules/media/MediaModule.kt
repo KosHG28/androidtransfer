@@ -110,10 +110,16 @@ class MediaModule : TransferModule {
             @Suppress("DEPRECATION")
             val destDir = File(Environment.getExternalStorageDirectory(), destination)
             destDir.mkdirs()
-            val destFile = File(destDir, header.displayName)
+            // Never a plain File(destDir, name): that truncates a same-named
+            // photo the receiver already had, and these now land in the
+            // receiver's own folders where collisions are likely.
+            val destFile = MediaStoreSupport.uniqueFile(destDir, header.displayName)
             destFile.outputStream().use { out -> file.inputStream().use { it.copyTo(out) } }
             val legacyValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, header.displayName)
+                // destFile.name, not header.displayName — they differ when the
+                // name had to be de-duplicated above, and the index must match
+                // the file actually on disk.
+                put(MediaStore.MediaColumns.DISPLAY_NAME, destFile.name)
                 put(MediaStore.MediaColumns.MIME_TYPE, header.mimeType)
                 @Suppress("DEPRECATION")
                 put(MediaStore.MediaColumns.DATA, destFile.absolutePath)

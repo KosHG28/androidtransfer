@@ -148,6 +148,11 @@ class TransferManager(
                 for (category in categories) {
                     val estimate = runCatching { modules[category]?.estimate(context) }.getOrNull()
                     if (estimate == null) incomplete = true else planned += estimate.bytes
+                    // Scanning a large media library or hundreds of APKs takes
+                    // real time, and the stall clock is already running — without
+                    // this the sender would accuse itself of having frozen before
+                    // it has sent a single byte.
+                    markActivity()
                 }
                 totalBytesExpected = planned
                 markActivity()
