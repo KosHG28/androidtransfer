@@ -84,7 +84,12 @@ fun ProgressScreen(viewModel: TransferViewModel, onDone: () -> Unit) {
 
     Scaffold { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Идёт перенос…", style = MaterialTheme.typography.headlineSmall)
+            Text("Идёт перенос", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Приложение можно свернуть — перенос продолжится. Держите телефоны рядом.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             val installStats by ApkInstaller.stats.collectAsState()
             if (installStats.anythingHappened) {

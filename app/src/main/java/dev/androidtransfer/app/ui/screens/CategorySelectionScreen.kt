@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -130,29 +132,42 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
             for ((groupTitle, groupCategories) in groups) {
                 Text(
                     groupTitle,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                    modifier = Modifier.padding(top = 16.dp, bottom = 6.dp),
                 )
+                // Each group sits on its own surface: nine checkboxes in one
+                // flat column reads like a form to fill in, three short cards
+                // read like choices to make.
+                Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 for (category in groupCategories) {
                     val info = categoryUiInfo(category)
                     val checked = category in viewModel.selectedCategories
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Icon(info.icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Checkbox(
-                            checked = checked,
-                            onCheckedChange = { enabled ->
-                                viewModel.toggleCategory(category, enabled)
-                                if (enabled) {
-                                    val perms = Permissions.forCategory(category)
-                                    if (perms.isNotEmpty()) permissionLauncher.launch(perms.toTypedArray())
-                                }
-                            },
+                    val toggle = { enabled: Boolean ->
+                        viewModel.toggleCategory(category, enabled)
+                        if (enabled) {
+                            val perms = Permissions.forCategory(category)
+                            if (perms.isNotEmpty()) permissionLauncher.launch(perms.toTypedArray())
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        // The whole row is the target, not just the 20dp
+                        // checkbox — this screen gets tapped all day.
+                        modifier = Modifier.fillMaxWidth().clickable { toggle(!checked) }.padding(end = 16.dp),
+                    ) {
+                        Checkbox(checked = checked, onCheckedChange = toggle)
+                        Icon(
+                            info.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
                         )
                         Text(
                             stringResource(info.labelRes),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f).padding(start = 12.dp),
                         )
                         // Only the categories that can be measured cheaply have
                         // a size; the rest simply show nothing rather than a
@@ -160,8 +175,8 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
                         viewModel.categorySizes[category]?.let { bytes ->
                             Text(
                                 Format.size(bytes),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -211,6 +226,8 @@ fun CategorySelectionScreen(viewModel: TransferViewModel, onStart: () -> Unit, o
                         }
                         else -> Unit
                     }
+                }
+                }
                 }
             }
 

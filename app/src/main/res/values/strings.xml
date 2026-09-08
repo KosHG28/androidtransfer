@@ -7,8 +7,11 @@
 
     <string name="home_title">AndroidTransfer</string>
     <string name="home_subtitle">Перенос данных с любого Android на любой Android</string>
-    <string name="home_role_send">Это старый телефон (отправить)</string>
-    <string name="home_role_receive">Это новый телефон (принять)</string>
+    <string name="home_role_send">Это старый телефон</string>
+    <string name="home_role_send_desc">Отправить данные на новый</string>
+    <string name="home_role_receive">Это новый телефон</string>
+    <string name="home_role_receive_desc">Принять данные со старого</string>
+    <string name="home_hint">Запустите приложение на обоих телефонах и выберите роль на каждом</string>
 
     <string name="transport_title">Способ соединения</string>
     <string name="transport_wifi">Wi-Fi</string>

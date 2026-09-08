@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -69,13 +70,16 @@ fun UsbScreen(viewModel: TransferViewModel, onConnected: () -> Unit) {
     Scaffold { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Подключение по USB", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "1. Соедините телефоны кабелем.\n" +
-                    "2. На одном включите USB-модем: Настройки → Точка доступа и модем.\n" +
-                    "3. На нём же — «Ждать подключение».\n" +
-                    "4. На втором введите IP первого (виден ниже) и «Подключиться».",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            Card {
+                Text(
+                    "1. Соедините телефоны кабелем.\n" +
+                        "2. На одном включите USB-модем: Настройки → Точка доступа и модем.\n" +
+                        "3. На нём же нажмите «Ждать подключение».\n" +
+                        "4. На втором введите IP первого (виден ниже) и нажмите «Подключиться».",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
 
             Text("IP этого телефона на USB-интерфейсе:", style = MaterialTheme.typography.bodySmall)
             if (localAddresses.isEmpty()) {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Cable
@@ -84,24 +85,45 @@ fun TransportScreen(viewModel: TransferViewModel, onTransportChosen: (TransportK
                 )
             }
 
-            Card(modifier = Modifier.fillMaxWidth().clickable { onTransportChosen(TransportKind.WIFI) }) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Bluetooth, contentDescription = null, modifier = Modifier.padding(end = 12.dp))
-                    Column {
-                        Text(stringResource(R.string.transport_wifi), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.transport_wifi_desc), style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
+            TransportCard(
+                icon = Icons.Filled.Bluetooth,
+                title = stringResource(R.string.transport_wifi),
+                description = stringResource(R.string.transport_wifi_desc),
+                onClick = { onTransportChosen(TransportKind.WIFI) },
+            )
 
-            Card(modifier = Modifier.fillMaxWidth().clickable { onTransportChosen(TransportKind.USB) }) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Cable, contentDescription = null, modifier = Modifier.padding(end = 12.dp))
-                    Column {
-                        Text(stringResource(R.string.transport_usb), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.transport_usb_desc), style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+            TransportCard(
+                icon = Icons.Filled.Cable,
+                title = stringResource(R.string.transport_usb),
+                description = stringResource(R.string.transport_usb_desc),
+                onClick = { onTransportChosen(TransportKind.USB) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TransportCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(modifier = Modifier.padding(20.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+            Column(modifier = Modifier.padding(start = 16.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

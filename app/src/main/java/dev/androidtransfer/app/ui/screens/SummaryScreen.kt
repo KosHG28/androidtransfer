@@ -61,10 +61,21 @@ fun SummaryScreen(viewModel: TransferViewModel, onOpenApps: () -> Unit, onFinish
                     tint = if (failed.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(28.dp),
                 )
-                Text(
-                    if (failed.isEmpty()) "Перенос завершён" else "Завершено с ошибками",
-                    style = MaterialTheme.typography.headlineSmall,
-                )
+                Column {
+                    Text(
+                        if (failed.isEmpty()) "Перенос завершён" else "Завершено с ошибками",
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                    Text(
+                        if (failed.isEmpty()) {
+                            "Всё перенеслось. Телефон можно отдавать."
+                        } else {
+                            "Часть данных перенести не удалось — подробности ниже."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             if (failed.isNotEmpty()) {
@@ -119,7 +130,7 @@ fun SummaryScreen(viewModel: TransferViewModel, onOpenApps: () -> Unit, onFinish
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) {
-                Text("Готово — следующий телефон")
+                Text("Готово")
             }
         }
     }
