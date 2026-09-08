@@ -5,9 +5,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import dev.androidtransfer.app.MainActivity
@@ -53,6 +55,9 @@ class TransferForegroundService : Service() {
     private var manager: TransferManager? = null
     private var lastNotificationUpdateMs = 0L
 
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
     private val _state = MutableStateFlow<TransferState>(TransferState.Idle)
     val state: StateFlow<TransferState> = _state
 
@@ -82,6 +87,7 @@ class TransferForegroundService : Service() {
         shutdownJob?.cancel()
         shutdownJob = null
         if (transport !== newTransport) releaseTransport()
+        acquireLocks()
         transport = newTransport
         val newManager = TransferManager(context.applicationContext, newTransport, modules)
         manager = newManager
@@ -95,6 +101,55 @@ class TransferForegroundService : Service() {
         }
         newManager.startListening()
         return newManager
+    }
+
+    /**
+     * A foreground service keeps the *process* alive and exempt from
+     * background restrictions — it does not keep the CPU running. With the
+     * screen off the device suspends, and a transfer that was moving happily
+     * simply stops, which the stall watchdog then reports two minutes later.
+     * That is exactly the shape of this app's normal use: start a 40-minute
+     * transfer, put the phones down, go serve the next customer.
+     *
+     * The Wi-Fi lock matters just as much on the wireless path: with the
+     * screen off the radio drops into power-save, which either stalls Nearby
+     * outright or slows it to the point of being useless.
+     *
+     * Both carry a timeout so that a bug somewhere in the shutdown path can
+     * cost a customer some battery, not their whole battery.
+     */
+    private fun acquireLocks() {
+        runCatching {
+            if (wakeLock?.isHeld != true) {
+                val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
+                    setReferenceCounted(false)
+                    acquire(MAX_LOCK_DURATION_MS)
+                }
+            }
+        }
+        runCatching {
+            if (wifiLock?.isHeld != true) {
+                val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                wifiLock = wifi.createWifiLock(mode, WAKE_LOCK_TAG).apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
+        }
+    }
+
+    private fun releaseLocks() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+        wifiLock = null
     }
 
     /**
@@ -131,11 +186,16 @@ class TransferForegroundService : Service() {
         runCatching { transport?.close() }
         transport = null
         manager = null
+        releaseLocks()
     }
 
     override fun onDestroy() {
         if (instance === this) instance = null
         releaseTransport()
+        // Belt and braces: releaseTransport() already does this, but a lock
+        // still held after the service is gone is the one leak here that
+        // costs the user something visible.
+        releaseLocks()
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -194,6 +254,11 @@ class TransferForegroundService : Service() {
         private const val TERMINAL_LINGER_MS = 4_000L
 
         private const val NOTIFICATION_UPDATE_INTERVAL_MS = 1_000L
+
+        private const val WAKE_LOCK_TAG = "AndroidTransfer::transfer"
+
+        /** Safety net, not a budget: long enough for any realistic transfer, short enough that a leak isn't fatal to the battery. */
+        private const val MAX_LOCK_DURATION_MS = 3 * 60 * 60 * 1000L
 
         @Volatile private var instance: TransferForegroundService? = null
         @Volatile private var pendingAction: ((TransferForegroundService) -> Unit)? = null
